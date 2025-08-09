@@ -1,0 +1,62 @@
+{
+  "name": "gamelibrarian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-platform game library that unifies multiple launchers (Steam, Epic, etc.)",
+  "main": "electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -s first \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "start": "electron .",
+    "build": "vite build",
+    "build:ui": "vite build",
+    "dist:win": "electron-builder --win nsis",
+    "dist": "electron-builder -w",
+    "postinstall": "node scripts/postinstall.mjs"
+  },
+  "dependencies": {
+    "fast-glob": "^3.3.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vdf-extra": "^2.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^9.0.1",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.3",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.gamelibrarian.app",
+    "asar": true,
+    "files": [
+      "dist/**",
+      "electron/**",
+      "src/main/**",
+      "scripts/**",
+      "src/sounds/**",
+      "package.json"
+    ],
+    "extraResources": [
+      { "from": "scripts", "to": "scripts", "filter": ["**/*"] }
+    ],
+    "directories": { "buildResources": "build" },
+    "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    }
+  }
+}
+
+

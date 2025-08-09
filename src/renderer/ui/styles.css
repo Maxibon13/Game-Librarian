@@ -1,0 +1,73 @@
+:root { color-scheme: dark; --bg:#0c0d10; --panel:#14161b; --panel-2:#171a20; --text:#e6e7eb; --muted:#b1b6c3; --brand:#6b7cff; --brand-2:#5a69e6; --glow:#3b82f6; }
+body { margin:0; font-family: Inter, system-ui, Arial, sans-serif; background:radial-gradient(1200px 600px at 10% -10%, #11131a 0, transparent 60%), radial-gradient(1200px 600px at 90% -20%, #0f1220 0, transparent 60%), var(--bg); color:var(--text) }
+.app { max-width: 1200px; margin: 0 auto; padding: 16px; }
+.header { display:flex; align-items:center; justify-content:space-between; padding: 10px 0 16px 0; position: sticky; top: 0; backdrop-filter: blur(8px); background: linear-gradient(180deg, rgba(12,13,16,.85), rgba(12,13,16,.6) 60%, transparent); z-index: 10 }
+.tabs { display:flex; gap:8px }
+.tabs button { background:linear-gradient(180deg, var(--panel), var(--panel-2)); color:var(--muted); border:1px solid #262a33; padding:8px 12px; border-radius:10px; cursor:pointer; transition: all .2s ease; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02) }
+.tabs button:hover { color:var(--text); border-color:#303545 }
+.tabs button.active { background:linear-gradient(180deg, #1d2030, #181b26); color:#fff; border-color:#3a4155; box-shadow: 0 6px 18px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,0.03) }
+.grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.card { position:relative; background:linear-gradient(180deg, var(--panel), var(--panel-2)); border-radius:14px; overflow:hidden; height: 280px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); transition: transform .2s ease, box-shadow .2s ease }
+.card::after { content:""; position:absolute; inset:-1px; border-radius:16px; padding:1px; background:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,0)); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events:none }
+.card.hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(0,0,0,0.35) }
+.thumb { height: 70%; background: linear-gradient(135deg, #2a2d35, #1f2127); filter: saturate(1.05); transition: transform .25s ease }
+.card.hover .thumb { transform: scale(1.03) }
+.title { padding: 10px 12px; font-weight:650; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; letter-spacing:.2px }
+.overlay { position:absolute; inset:0; background: radial-gradient(500px 180px at 50% 100%, rgba(0,0,0,.85) 10%, rgba(0,0,0,.2) 70% ); display:flex; flex-direction:column; justify-content:end; padding:12px; gap: 10px; opacity:0; transition: opacity .2s ease }
+.card.hover .overlay { opacity: 1 }
+.overlay .meta { display:flex; gap: 12px; font-size: 12px; opacity: 0.9 }
+.launch { appearance:none; border:none; border-radius:10px; padding:10px 12px; background:linear-gradient(180deg, var(--brand), var(--brand-2)); color:white; font-weight:700; cursor:pointer; box-shadow: 0 8px 24px rgba(90,105,230,.35); transition: transform .12s ease, filter .2s ease }
+.launch:hover { filter: brightness(1.08) }
+.card.hover .launch { transform: translateY(-1px) }
+
+.settings { display:flex; flex-direction:column; gap:24px; max-width: 800px }
+.settings section { background:linear-gradient(180deg, var(--panel), var(--panel-2)); padding:16px; border-radius:12px; box-shadow: 0 10px 30px rgba(0,0,0,.25) }
+.settings h2 { margin:0 0 10px 0 }
+.settings label { display:flex; flex-direction:column; gap:6px; margin-bottom:12px }
+.settings input { background:#0e0f12; border:1px solid #2a2d35; border-radius:8px; padding:8px; color:#e6e7eb }
+.settings .field-list .row { display:flex; align-items:center; gap:8px; margin-top:8px }
+.settings .field-list .label { flex:1; opacity:0.9 }
+.settings .actions { display:flex; justify-content:flex-end }
+
+/* Top loading bar */
+.loading-bar { position: fixed; top: 0; left: 0; width: 100%; height: 3px; background: transparent; overflow: hidden; z-index: 1000 }
+.loading-bar::before { content: ""; position: absolute; left: -40%; width: 40%; height: 100%; background: #5865f2; animation: indeterminate 1.1s infinite ease-in-out }
+@keyframes indeterminate { 0% { left: -40%; width: 40% } 50% { left: 20%; width: 60% } 100% { left: 100%; width: 80% } }
+
+/* Cross-fade for view switches */
+.view { animation: fadeIn .25s ease; }
+.animate-fade { animation: fadeIn .25s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px) } to { opacity:1; transform: translateY(0) } }
+
+/* Hover background glow */
+.card.hover::before { content:""; position:absolute; inset:auto auto 30% 50%; width:140%; height:60%; transform: translateX(-50%); background: radial-gradient(60% 80% at 50% 100%, rgba(59,130,246,.28), transparent 70%); filter: blur(22px); pointer-events:none }
+
+/* Session overlay */
+.session-overlay { position: fixed; inset: 0; backdrop-filter: blur(12px); z-index: 2000; display:flex; align-items:center; justify-content:center; animation: fadeInOverlay .25s ease; }
+.session-overlay .session-content { animation: popIn .25s ease; }
+@keyframes fadeInOverlay { from { opacity: 0 } to { opacity: 1 } }
+@keyframes popIn { from { opacity: 0; transform: translateY(6px) scale(0.98) } to { opacity: 1; transform: translateY(0) scale(1) } }
+
+/* Session ended card */
+.ended-overlay { position: fixed; inset:0; z-index: 2000; background: #111318cc; display:flex; align-items:center; justify-content:center; animation: fadeInOverlay .22s ease forwards }
+.ended-overlay.hide { animation: fadeOutOverlay .22s ease forwards }
+.ended-card { width: min(520px, 92vw); display:flex; flex-direction:column; gap:12px; padding:20px; border-radius: 14px; background: #1b1e25; box-shadow: 0 20px 60px rgba(0,0,0,.5); animation: popIn .22s ease forwards; cursor: pointer }
+.ended-card.hide { animation: popOut .22s ease forwards }
+.ended-title { font-size: 18px; font-weight: 700; letter-spacing: .3px }
+.ended-thumb { width: 100%; aspect-ratio: 600/900; object-fit: cover; border-radius: 10px; background: linear-gradient(135deg, #2a2d35, #1f2127) }
+.ended-thumb.placeholder { display:block }
+.ended-elapsed { font-size: 13px; opacity: .9 }
+.ended-hint { font-size: 12px; opacity: .7 }
+@keyframes fadeOutOverlay { from { opacity: 1 } to { opacity: 0 } }
+@keyframes popOut { from { opacity: 1; transform: translateY(0) scale(1)} to { opacity: 0; transform: translateY(6px) scale(0.98)} }
+.session-bg { position:absolute; inset:0; background-size: cover; background-position:center; filter: blur(18px) brightness(.4); transform: scale(1.08); }
+.session-content { position: relative; display:flex; flex-direction:column; gap:16px; align-items:center; text-align:center; padding: 24px 28px; border-radius: 16px; background: rgba(18,19,24, .55); box-shadow: 0 20px 60px rgba(0,0,0,.45) }
+.session-title { font-size: 22px; font-weight: 700; letter-spacing: .3px }
+.session-elapsed { font-size: 14px; opacity: .9 }
+.session-actions { margin-top: 8px }
+
+/* Starting overlay progress bar */
+.starting .progress-bar { position: relative; width: 220px; height: 6px; background: rgba(255,255,255,.12); border-radius: 999px; overflow: hidden }
+.starting .progress-bar .bar { position:absolute; inset:0; width:40%; background: #5865f2; border-radius:999px; animation: progressSlide 1.1s infinite ease-in-out }
+@keyframes progressSlide { 0% { left:-40% } 50% { left:30% } 100% { left:100% } }
+
