@@ -19,12 +19,21 @@ let backendInitialized = false
 
 const APP_NAME = 'Game Librarian'
 const APP_REPOSITORY = 'https://github.com/Maxibon13/Game-Librarian'
-const LOCAL_VERSION_PATH = process.platform === 'win32'
-  ? 'C:/Program Files/Game Librarian/version.txt'
-  : '/opt/GameLibrarian/version.txt'
+// Resolve Version.Json depending on dev vs packaged
+function resolveVersionJsonPath() {
+  // __dirname is .../electron in both dev and packaged (inside asar)
+  // Version.Json is placed at app root alongside electron/
+  return path.join(__dirname, '../Version.Json')
+}
 
 async function getLocalVersion() {
-  try { return (await fs.readFile(LOCAL_VERSION_PATH, 'utf8')).trim() } catch { return '0.0.0' }
+  try {
+    const raw = await fs.readFile(resolveVersionJsonPath(), 'utf8')
+    const data = JSON.parse(raw)
+    return String(data?.version || '0.0.0')
+  } catch {
+    return '0.0.0'
+  }
 }
 
 function parseOwnerRepo(repoUrl) {
@@ -49,12 +58,12 @@ async function checkForUpdate() {
   const cfg = { appRepository: APP_REPOSITORY }
   const localVersion = await getLocalVersion()
   const { owner, repo } = parseOwnerRepo(cfg.appRepository || 'https://github.com/Maxibon13/Game-Librarian')
-  const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/package.json`
+  const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/Version.Json`
   try {
     const res = await fetch(rawUrl)
     if (!res.ok) throw new Error(`http ${res.status}`)
-    const remotePkg = await res.json()
-    const remoteVersion = remotePkg?.version || '0.0.0'
+    const remoteJson = await res.json()
+    const remoteVersion = remoteJson?.version || '0.0.0'
     const cmp = compareSemver(remoteVersion, localVersion)
     return {
       ok: true,
@@ -137,27 +146,28 @@ app.whenReady().then(async () => {
   // Expose updater IPC before backend is initialized
   ipcMain.handle('updater:getConfig', async () => ({ appName: APP_NAME, appRepository: APP_REPOSITORY, appVersion: await getLocalVersion(), canUpdate: true }))
   ipcMain.handle('updater:check', async () => {
-    // Prefer Python helper if available (parity with other scripts)
-    try {
-      const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-      const scriptPath = path.join(base, 'scripts', 'updater.py')
-      const payload = JSON.stringify({ repository: APP_REPOSITORY, localVersion: await getLocalVersion(), canUpdate: true, useGit: true })
-      const run = (cmd) => new Promise((resolve, reject) => {
+    // Prefer bundled batch updater on Windows; otherwise fallback to JS
+    if (process.platform === 'win32') {
+      try {
+        const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
+        const scriptPath = path.join(base, 'scripts', 'updater.bat')
         const { spawn } = require('node:child_process')
-        const p = spawn(cmd, [scriptPath, 'check', payload], { stdio: ['ignore','pipe','ignore'] })
+        const p = spawn('cmd.exe', ['/c', scriptPath, 'check'], { stdio: ['ignore','pipe','ignore'] })
         let out = ''
-        p.stdout.on('data', (d) => out += d.toString())
-        p.on('error', reject)
-        p.on('close', () => {
-          try { resolve(JSON.parse(out || '{}')) } catch { resolve(null) }
+        await new Promise((resolve) => {
+          p.stdout.on('data', (d) => out += d.toString())
+          p.on('close', () => resolve())
+          p.on('error', () => resolve())
         })
-      })
-      let res = await run('python').catch(async () => await run('py').catch(() => null))
-      if (res && res.ok !== undefined) {
-        try { console.log('[Updater] versions', { local: res.localVersion, remote: res.remoteVersion, updateAvailable: res.updateAvailable, source: res.source || 'python' }) } catch {}
-        return res
-      }
-    } catch {}
+        try {
+          const parsed = JSON.parse(out || '{}')
+          if (parsed && parsed.ok !== undefined) {
+            try { console.log('[Updater] versions', { local: parsed.localVersion, remote: parsed.remoteVersion, updateAvailable: parsed.updateAvailable, source: 'batch' }) } catch {}
+            return parsed
+          }
+        } catch {}
+      } catch {}
+    }
     const fb = await checkForUpdate()
     try { console.log('[Updater] versions', { local: fb.localVersion, remote: fb.remoteVersion, updateAvailable: fb.updateAvailable, source: 'fallback-js' }) } catch {}
     return fb
@@ -165,15 +175,18 @@ app.whenReady().then(async () => {
   ipcMain.handle('updater:run', async () => {
     try {
       const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-      const scriptPath = path.join(base, 'scripts', 'updater.py')
-      const run = (cmd) => new Promise((resolve, reject) => {
-        const { spawn } = require('node:child_process')
-        const p = spawn(cmd, [scriptPath], { stdio: 'inherit' })
-        p.on('error', reject)
+      const scriptPath = path.join(base, 'scripts', 'updater.bat')
+      const { spawn } = require('node:child_process')
+      const env = { ...process.env }
+      // Ensure desired install root
+      const parent = path.join(base, '..')
+      const desired = path.join(parent, 'Game Librarian')
+      env.INSTALL_DIR = desired
+      return await new Promise((resolve) => {
+        const p = spawn('cmd.exe', ['/c', scriptPath], { stdio: 'inherit', env })
+        p.on('error', () => resolve({ ok: false }))
         p.on('close', (code) => resolve({ ok: code === 0, code }))
       })
-      let res = await run('python').catch(async () => await run('py').catch(() => ({ ok: false })))
-      return res
     } catch (e) {
       return { ok: false, error: String(e) }
     }

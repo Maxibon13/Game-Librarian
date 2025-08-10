@@ -42,7 +42,8 @@
       "src/renderer/**",
       "scripts/**",
       "src/sounds/**",
-      "package.json"
+      "package.json",
+      "Version.Json"
     ],
     "extraResources": [
       {

@@ -5,11 +5,18 @@ REM === CONFIG ===
 set "REPO_URL=https://github.com/Maxibon13/Game-Librarian.git"
 set "BRANCH=main"
 
-REM Install/update in the PARENT directory of this script
+REM Install/update into INSTALL_DIR if provided; otherwise PARENT directory of this script
 set "SCRIPT_DIR=%~dp0"
-set "TARGET_DIR=%SCRIPT_DIR%.."
+if defined INSTALL_DIR (
+    set "TARGET_DIR=%INSTALL_DIR%"
+ ) else (
+    set "TARGET_DIR=%SCRIPT_DIR%.."
+ )
 
 REM Normalize TARGET_DIR by pushing then popping
+if not exist "%TARGET_DIR%" (
+    mkdir "%TARGET_DIR%" >nul 2>nul
+)
 pushd "%TARGET_DIR%" >nul
 set "TARGET_DIR=%CD%"
 popd >nul
