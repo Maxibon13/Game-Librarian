@@ -10,7 +10,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   debugSteam: () => ipcRenderer.invoke('debug:steam'),
   forceQuit: (game) => ipcRenderer.invoke('game:forceQuit', game),
   onSessionStart: (handler) => ipcRenderer.on('game:session-started', (_e, payload) => handler(payload)),
-  onSessionEnd: (handler) => ipcRenderer.on('game:session-ended', (_e, payload) => handler(payload))
+  onSessionEnd: (handler) => ipcRenderer.on('game:session-ended', (_e, payload) => handler(payload)),
+  // Updater
+  getAppConfig: () => ipcRenderer.invoke('updater:getConfig'),
+  checkForUpdate: () => ipcRenderer.invoke('updater:check'),
+  initBackend: () => ipcRenderer.invoke('backend:init')
 })
 
 

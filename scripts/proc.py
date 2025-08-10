@@ -1,23 +1,11 @@
 import sys
 import os
 import json
-import time
 import subprocess
+import time
 
 
-CRITICAL_IMAGES = {
-    'explorer.exe','csrss.exe','wininit.exe','winlogon.exe','services.exe','lsass.exe',
-    'dwm.exe','smss.exe','fontdrvhost.exe','system','registry'
-}
-
-# Common non-game executables we should ignore for "matches"
-IGNORE_IMAGES = {
-    'steam.exe','steamwebhelper.exe','epicgameslauncher.exe','crashreporter.exe',
-    'eaclauncher.exe','easyeanticheat_launcher.exe','easyeanticheat.exe','epicwebhelper.exe'
-}
-
-
-def get_processes():
+def _ps_list_windows():
     try:
         cmd = [
             'powershell',
@@ -26,7 +14,7 @@ def get_processes():
             '-Command',
             'Get-CimInstance Win32_Process | Select-Object ProcessId,ExecutablePath,CommandLine,ParentProcessId,Name | ConvertTo-Json -Depth 2 -Compress'
         ]
-        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
+        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         if completed.returncode == 0 and completed.stdout:
             data = json.loads(completed.stdout)
             if isinstance(data, dict):
@@ -37,208 +25,279 @@ def get_processes():
     return []
 
 
-def normalize_filters(filters):
-    exec_path = (filters.get('executablePath') or '').strip()
-    image_name = (filters.get('imageName') or '').strip()
+def _norm_path(p):
+    if not p:
+        return ''
+    return str(p).replace('/', '\\').strip().lower()
+
+
+def _image_from_path(p):
+    try:
+        return os.path.basename(p).lower()
+    except Exception:
+        return ''
+
+
+def _extract_cmd_exe(cmdline):
+    try:
+        c = (cmdline or '').strip()
+        if not c:
+            return ''
+        if c.startswith('"'):
+            end = c.find('"', 1)
+            if end > 1:
+                return c[1:end]
+        token = c.split()[0]
+        return token if token.lower().endswith('.exe') else ''
+    except Exception:
+        return ''
+
+
+LAUNCHER_IMAGES = {
+    'steam.exe','steamwebhelper.exe','epicgameslauncher.exe','epicwebhelper.exe','eaclauncher.exe','easyeanticheat_launcher.exe','easyeanticheat.exe'
+}
+
+IGNORE_IMAGES = {
+    'python.exe','python3.exe','python3.11.exe','python3.12.exe','python3.13.exe','py.exe',
+    'cmd.exe','conhost.exe','powershell.exe','pwsh.exe','wscript.exe','cscript.exe','reg.exe',
+    'node.exe','electron.exe','werfault.exe','crashreportclient.exe','steamwebhelper.exe'
+}
+
+IGNORE_PREFIXES = (
+    'unitycrashhandler',
+)
+
+STOPWORDS = {'a','an','the','of','and','or'}
+
+def _sanitize_tokens(title):
+    t = (title or '').lower()
+    out = []
+    token = ''
+    for ch in t:
+        if ch.isalnum():
+            token += ch
+        else:
+            if len(token) >= 3 and token not in STOPWORDS:
+                out.append(token)
+            token = ''
+    if len(token) >= 3 and token not in STOPWORDS:
+        out.append(token)
+    return out
+
+
+def _evaluate_match(proc, f):
+    pid = proc.get('ProcessId') or proc.get('Id') or proc.get('pid')
+    ppid = proc.get('ParentProcessId') or proc.get('ppid')
+    name = (proc.get('Name') or '').lower()
+    exe_path = (proc.get('ExecutablePath') or '').strip()
+    cmd = (proc.get('CommandLine') or '').strip()
+    parsed = _extract_cmd_exe(cmd)
+    path_val = _norm_path(exe_path or parsed)
+    if not name and path_val:
+        name = _image_from_path(path_val)
+    base_name = os.path.splitext(os.path.basename(path_val or name))[0].lower()
+
+    exact_exec = bool(f['executablePath'] and path_val == f['executablePath'])
+    image_match = bool(f['imageName'] and name == f['imageName'])
+    title_match = False
+    if f['titleTokens']:
+        matches = [tok for tok in f['titleTokens'] if tok in base_name]
+        title_match = (len(matches) >= 2) or (''.join(f['titleTokens']) == base_name)
+
+    install_dir = f['installDir']
+    under_install = bool(install_dir and path_val.startswith(install_dir))
+    # Check alternate install variants (e.g., with steamapps/common injected)
+    if not under_install and f.get('installDirVariants'):
+        for v in f['installDirVariants']:
+            if v and path_val.startswith(v):
+                under_install = True
+                break
+
+    reasons = []
+    if exact_exec:
+        reasons.append('exact-executablePath')
+    if image_match:
+        reasons.append('image-name-match')
+    if under_install:
+        reasons.append('exec-under-installDir')
+    if title_match:
+        reasons.append('title-match')
+    if f['parentPid'] and isinstance(ppid, int) and int(f['parentPid']) == int(ppid):
+        reasons.append('parent-match')
+
+    strong = exact_exec or image_match or title_match
+    any_match = strong or under_install
+
+    # Scoring to rank most likely game processes
+    score = 0
+    if exact_exec:
+        score += 100
+    if image_match:
+        score += 80
+    if title_match:
+        score += 20
+    if under_install:
+        score += 50
+    if 'parent-match' in reasons:
+        score += 30
+    if name in LAUNCHER_IMAGES:
+        score -= 40
+
+    return any_match, strong, pid, name, path_val, reasons, score
+
+
+def action_find(filters):
+    if os.name != 'nt':
+        return { 'ok': True, 'pids': [], 'matches': [], 'note': 'windows-only finder' }
+
+    exec_path = _norm_path((filters.get('executablePath') or ''))
+    image_name = (filters.get('imageName') or '').strip().lower()
     if not image_name and exec_path:
-        try:
-            image_name = os.path.basename(exec_path)
-        except Exception:
-            image_name = ''
-    install_dir = (filters.get('installDir') or '').replace('/', '\\').lower().rstrip('\\')
-    install_dir_variants = []
+        image_name = _image_from_path(exec_path)
+    install_dir = _norm_path((filters.get('installDir') or '')).rstrip('\\')
     if install_dir:
         install_dir = install_dir + '\\'
-        install_dir_variants.append(install_dir)
-        # Heuristic: add steamapps variant if missing
-        try:
-            needle = '\\steamlibrary\\'
-            if (needle in install_dir) and ('\\steamapps\\' not in install_dir):
-                before, after = install_dir.split(needle, 1)
-                alt = before + needle + 'steamapps\\' + after
-                install_dir_variants.append(alt)
-        except Exception:
-            pass
+    title = (filters.get('title') or '').strip().lower()
+    title_tokens = _sanitize_tokens(title)
+    parent_pid = None
+    try:
+        parent_pid = int(filters.get('parentPid')) if filters.get('parentPid') is not None else None
+    except Exception:
+        parent_pid = None
+
+    # Install dir variants: inject steamapps/common if user provided SteamLibrary/common path
+    variants = []
+    try:
+        needle = '\\steamlibrary\\'
+        if install_dir and (needle in install_dir) and ('\\steamapps\\' not in install_dir):
+            before, after = install_dir.split(needle, 1)
+            alt = before + needle + 'steamapps\\' + after
+            variants.append(alt)
+    except Exception:
+        pass
+
+    f = {
+        'executablePath': exec_path,
+        'imageName': image_name,
+        'installDir': install_dir,
+        'installDirVariants': variants,
+        'title': title,
+        'titleTokens': title_tokens,
+        'parentPid': parent_pid
+    }
+
+    procs = _ps_list_windows()
+    candidates = []
+    for p in procs:
+        any_match, strong, pid, name, path_val, reasons, score = _evaluate_match(p, f)
+        if not any_match or not isinstance(pid, int):
+            continue
+        # Skip known irrelevant images
+        if name in IGNORE_IMAGES:
+            continue
+        if any(name.startswith(pref) for pref in IGNORE_PREFIXES):
+            continue
+        if name in LAUNCHER_IMAGES:
+            continue
+        candidates.append({ 'pid': pid, 'name': name, 'path': path_val, 'reasons': reasons, 'score': score })
+
+    # Sort by score descending and return top set (cap to avoid noise)
+    candidates.sort(key=lambda x: x['score'], reverse=True)
+    top = candidates[:12]
+    out_pids = [c['pid'] for c in top if c['score'] > 0]
+    return { 'ok': True, 'pids': out_pids, 'matches': top, 'ts': time.time() }
+
+
+def action_alive(filters):
     pids = []
     for pid in (filters.get('pids') or []):
         try:
             pids.append(int(pid))
         except Exception:
             pass
-    return {
-        'executablePath': exec_path.lower(),
-        'imageName': image_name.lower(),
-        'installDir': install_dir,
-        'installDirVariants': install_dir_variants,
-        'pids': pids,
-        'preferImage': bool(filters.get('preferImage')),
-        'strict': bool(filters.get('strict')),
-        'title': (filters.get('title') or '').strip(),
-    }
 
-
-def evaluate_process(p, f):
-    def extract_path_from_cmdline(cmdline):
-        try:
-            c = (cmdline or '').strip()
-            if not c:
-                return ''
-            if c.startswith('"'):
-                end = c.find('"', 1)
-                if end > 1:
-                    return c[1:end]
-            token = c.split()[0]
-            return token if token.lower().endswith('.exe') else ''
-        except Exception:
-            return ''
-
-    pid = p.get('ProcessId') or p.get('Id') or p.get('pid')
-    name = (p.get('Name') or '').lower()
-    exe_path = (p.get('ExecutablePath') or '').strip()
-    cmd = (p.get('CommandLine') or '').strip()
-    parsed_from_cmd = extract_path_from_cmdline(cmd)
-    path_val = (exe_path or parsed_from_cmd or '').replace('/', '\\').lower()
-    if not name and path_val:
-        try:
-            name = os.path.basename(path_val).lower()
-        except Exception:
-            pass
-
-    exact_exec = bool(f['executablePath'] and path_val == f['executablePath'])
-    image_match = bool(f['imageName'] and name == f['imageName'])
-    under_install = bool(
-        (f.get('installDir') and path_val.startswith(f['installDir'])) or
-        any(path_val.startswith(v) for v in (f.get('installDirVariants') or []))
-    )
-    pid_alive = bool(isinstance(pid, int) and pid in f['pids'])
-    title_match = False
-    if f.get('title'):
-        t = f['title'].lower()
-        title_match = (t in (cmd or '').lower()) or (t in name)
-
-    strong = exact_exec or image_match or title_match
-    any_match = strong or under_install
-
-    return {
-        'pid': pid,
-        'name': name,
-        'path': path_val,
-        'cmd': cmd,
-        'exact_exec': exact_exec,
-        'image_match': image_match,
-        'under_install': under_install,
-        'pid_alive': pid_alive,
-        'title_match': title_match,
-        'strong': strong,
-        'any': any_match,
-    }
-
-
-def action_check(filters):
-    if os.name != 'nt':
-        return { 'running': False, 'matches': [], 'alivePids': [], 'debug': { 'note': 'non-windows' } }
-
-    f = normalize_filters(filters)
-    procs = get_processes()
-    results = [evaluate_process(p, f) for p in procs]
-
-    # Alive = provided PID list that still exists
-    provided = set(f.get('pids') or [])
-    observed = { r['pid'] for r in results if isinstance(r['pid'], int) }
-    alive = sorted(list(provided.intersection(observed)))
-    matched = [
-        {
-            'pid': r['pid'], 'path': r['path'], 'name': r['name'],
-            'reasons': [k for k in ['exact-executablePath','image-name-match','exec-under-installDir','title-match']
-                       if (k == 'exact-executablePath' and r['exact_exec'])
-                       or (k == 'image-name-match' and r['image_match'])
-                       or (k == 'exec-under-installDir' and r['under_install'])
-                       or (k == 'title-match' and r['title_match'])]
-        }
-        for r in results if r['any'] and r['name'] not in CRITICAL_IMAGES and r['name'] not in IGNORE_IMAGES
-    ]
-
-    if f['pids']:
-        # Consider running only if an alive provided PID exists, otherwise rely on strong match AND under_install to reduce noise
-        running = bool(alive) or any((r['strong'] and r['under_install']) for r in results)
-    else:
-        if f['executablePath'] or f['imageName'] or f.get('title'):
-            running = any(r['strong'] for r in results)
-        else:
-            running = any(r['any'] for r in results)
-
-    sample = [
-        { 'pid': r['pid'], 'name': r['name'], 'path': r['path'], 'exact': r['exact_exec'], 'img': r['image_match'], 'dir': r['under_install'], 'alive': r['pid_alive'], 'title': r['title_match'] }
-        for r in results[:15]
-    ]
-
-    return {
-        'running': running,
-        'matches': matched,
-        'alivePids': alive,
-        'counts': { 'total': len(results), 'matched': len(matched) },
-        'debug': {
-            'inputFilters': f,
-            'procSample': sample,
-            'alive': alive,
-            'ts': time.time(),
-            'source': 'cim'
-        }
-    }
-
-
-def taskkill_pids(pids):
     if not pids:
-        return []
-    try:
-        args = ' /PID '.join(str(pid) for pid in pids)
-        subprocess.run(f'taskkill /PID {args} /F', shell=True, capture_output=True, text=True, timeout=10)
-    except Exception:
-        pass
-    return pids
+        return { 'ok': True, 'pids': [] }
 
+    if os.name == 'nt':
+        procs = _ps_list_windows()
+        # Map existing processes by PID for quick lookup
+        proc_map = { p.get('ProcessId'): p for p in procs if isinstance(p.get('ProcessId'), int) }
 
-def taskkill_image(image_name):
-    try:
-        subprocess.run(f'taskkill /IM "{image_name}" /F', shell=True, capture_output=True, text=True, timeout=10)
-        return True
-    except Exception:
-        return False
+        # Determine whether caller provided match-filters
+        exec_path = _norm_path((filters.get('executablePath') or ''))
+        image_name = (filters.get('imageName') or '').strip().lower()
+        if not image_name and exec_path:
+            image_name = _image_from_path(exec_path)
+        install_dir = _norm_path((filters.get('installDir') or '')).rstrip('\\')
+        if install_dir:
+            install_dir = install_dir + '\\'
+        title = (filters.get('title') or '').strip().lower()
+        has_match_filters = bool(exec_path or image_name or install_dir or title)
+
+        alive = []
+        if has_match_filters:
+            # Only keep PID if still matches filters
+            f = {
+                'executablePath': exec_path,
+                'imageName': image_name,
+                'installDir': install_dir,
+                'title': title
+            }
+            for pid in pids:
+                p = proc_map.get(pid)
+                if not p:
+                    continue
+                any_match, _, _, _, _, _ = _evaluate_match(p, f)
+                if any_match:
+                    alive.append(pid)
+        else:
+            # No filters: just check existence
+            alive = [pid for pid in pids if pid in proc_map]
+
+        return { 'ok': True, 'pids': alive }
+    else:
+        alive = []
+        for pid in pids:
+            try:
+                os.kill(pid, 0)
+                alive.append(pid)
+            except Exception:
+                pass
+        return { 'ok': True, 'pids': alive }
 
 
 def action_kill(filters):
+    pids = []
+    for pid in (filters.get('pids') or []):
+        try:
+            pids.append(int(pid))
+        except Exception:
+            pass
+    image = (filters.get('imageName') or '').strip()
+
     if os.name != 'nt':
-        return { 'ok': False, 'error': 'windows only' }
+        # Try to kill by pid on non-windows
+        killed = []
+        for pid in pids:
+            try:
+                os.kill(pid, 9)
+                killed.append(pid)
+            except Exception:
+                pass
+        return { 'ok': True, 'killedPids': killed }
 
-    f = normalize_filters(filters)
-    procs = get_processes()
-    results = [evaluate_process(p, f) for p in procs]
-
-    candidates = sorted({ r['pid'] for r in results if (r['pid_alive'] or r['strong']) and isinstance(r['pid'], int) and r['name'] not in CRITICAL_IMAGES })
-    killed = []
-    used_image = False
-    if f['preferImage'] and f['imageName'] and f['imageName'].endswith('.exe') and f['imageName'] not in CRITICAL_IMAGES:
-        used_image = taskkill_image(f['imageName'])
-    if not used_image:
-        if len(candidates) > 8:
-            return { 'ok': False, 'error': 'too_many_pids', 'capped': len(candidates) }
-        killed = taskkill_pids(candidates)
-
-    sample = [ { 'pid': r['pid'], 'name': r['name'], 'path': r['path'], 'strong': r['strong'], 'alive': r['pid_alive'] } for r in results[:12] ]
-    return { 'ok': True, 'usedImage': bool(used_image), 'killedPids': killed, 'debug': { 'procSample': sample, 'inputs': f } }
-
-
-def action_trace(filters, duration=3.0, interval=0.5):
-    if os.name != 'nt':
-        return { 'ok': False, 'error': 'windows only' }
-    f = normalize_filters(filters)
-    end = time.time() + max(0.5, float(duration))
-    snapshots = []
-    while time.time() < end:
-        r = action_check(f)
-        snapshots.append({ 'ts': r['debug']['ts'], 'running': r['running'], 'alivePids': r['alivePids'], 'matches': r['matches'] })
-        time.sleep(max(0.1, float(interval)))
-    return { 'ok': True, 'snapshots': snapshots, 'inputs': f }
+    try:
+        killed = []
+        if pids:
+            args = ' /PID '.join(str(pid) for pid in pids)
+            subprocess.run(f'taskkill /PID {args} /F', shell=True, capture_output=True, text=True, timeout=10)
+            killed = pids
+        elif image:
+            subprocess.run(f'taskkill /IM "{image}" /F', shell=True, capture_output=True, text=True, timeout=10)
+        return { 'ok': True, 'killedPids': killed }
+    except Exception as e:
+        return { 'ok': False, 'error': str(e) }
 
 
 def main():
@@ -250,15 +309,14 @@ def main():
         except Exception:
             filters = {}
 
-        if action == 'check':
-            print(json.dumps(action_check(filters)))
+        if action == 'find':
+            print(json.dumps(action_find(filters)))
+        elif action == 'alive':
+            print(json.dumps(action_alive(filters)))
         elif action == 'kill':
             print(json.dumps(action_kill(filters)))
-        elif action == 'trace':
-            dur = float(sys.argv[3]) if len(sys.argv) > 3 else 3.0
-            print(json.dumps(action_trace(filters, dur)))
         else:
-            print(json.dumps({ 'ok': False, 'error': 'unknown_action', 'hint': 'use check|kill|trace' }))
+            print(json.dumps({ 'ok': False, 'error': 'unknown_action', 'hint': 'use find|alive|kill' }))
     except Exception as e:
         print(json.dumps({ 'ok': False, 'error': str(e) }))
         sys.exit(1)
@@ -266,5 +324,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-

@@ -20,16 +20,17 @@ export class PlaytimeService {
     const startedAt = Date.now()
     const child = spawn(command.command, command.args, { detached: true, stdio: 'ignore', shell: command.shell ?? false })
     child.unref()
-    this.running.set(`${game.launcher}:${game.id}`, { start: startedAt, proc: child, pids: [] })
+    this.running.set(`${game.launcher}:${game.id}`, { start: startedAt, proc: child, pids: [], parentPid: child.pid })
     // Only consider child exit as session end if we launched the game's actual executable directly.
-    if (game.executablePath && command.command === game.executablePath) {
-      child.on?.('exit', () => { this.finishSession(game) })
+    if (os.platform() !== 'win32' && game.executablePath && command.command === game.executablePath) {
+      child.on?.('exit', () => { this.finishSession(game, 'child-exit') })
     }
 
     try {
+      const DEBUG = true
       const windows = BrowserWindow.getAllWindows()
       if (windows.length > 0) {
-        console.log('Sending session-started event:', { game: game.title, startedAt })
+        if (DEBUG) console.log('[PlaytimeDetector] session-started', { title: game.title, startedAt, cmd: command })
         windows[0].webContents.send('game:session-started', { game, startedAt })
       }
     } catch (e) {
@@ -42,7 +43,7 @@ export class PlaytimeService {
     }
   }
 
-  finishSession(game) {
+  finishSession(game, reason) {
     const key = `${game.launcher}:${game.id}`
     const entry = this.running.get(key)
     if (!entry) return
@@ -54,10 +55,10 @@ export class PlaytimeService {
     void this.save()
 
     try {
+      console.log('[PlaytimeDetector] session-ended', { title: game.title, durationMs, reason: reason || 'unknown' })
       const windows = BrowserWindow.getAllWindows()
       if (windows.length > 0) {
-        console.log('Sending session-ended event:', { game: game.title, durationMs })
-        windows[0].webContents.send('game:session-ended', { game, durationMs })
+        windows[0].webContents.send('game:session-ended', { game, durationMs, reason })
       }
     } catch (e) {
       console.error('Failed to send session-ended:', e)
@@ -186,10 +187,11 @@ export class PlaytimeService {
         const filters = JSON.stringify({
           executablePath: game.executablePath || '',
           installDir: game.installDir || '',
-          title: game.title || ''
+          title: (game.title || '').toLowerCase(),
+          imageName: game.executablePath ? path.basename(game.executablePath) : ''
         })
         const runCmd = (cmd) => {
-          const py = spawn(cmd, [scriptPath, 'check', filters], { stdio: ['ignore', 'pipe', 'ignore'] })
+          const py = spawn(cmd, [scriptPath, 'find', filters], { stdio: ['ignore', 'pipe', 'ignore'] })
           let out = ''
           py.stdout.on('data', (d) => (out += d.toString()))
           py.on('error', () => {
@@ -199,10 +201,8 @@ export class PlaytimeService {
           py.on('exit', () => {
             try {
               const result = JSON.parse(out || '{}')
-              const matches = Array.isArray(result.matches) ? result.matches : []
-              const pids = matches.map((m) => m.pid).filter((pid) => Number.isFinite(pid))
-              const alive = Array.isArray(result.alivePids) ? result.alivePids : []
-              return resolve(Array.from(new Set([...pids, ...alive])).filter((pid) => Number.isFinite(pid)))
+              const pids = Array.isArray(result.pids) ? result.pids : []
+              return resolve(pids.filter((pid) => Number.isFinite(pid)))
             } catch {
               return resolve([])
             }
@@ -230,82 +230,163 @@ export class PlaytimeService {
 
   monitorWindowsProcessForGame(game) {
     const key = `${game.launcher}:${game.id}`
-    let consecutiveNotRunning = 0
     const startTime = Date.now()
-    // Maintain last-known-alive PIDs to avoid premature end; expire stale ones
-    const stickyAlive = new Map() // pid -> lastSeenMs
-    const stickyTtlMs = 4000
+    let trackedPids = new Set()
+    let seeded = false
+    const seedWindowMs = 45000
+    const graceAfterEmptyMs = 5000
+    let emptySinceTs = null
+    const DEBUG = true
+    const log = (...args) => { if (DEBUG) console.log('[PlaytimeDetector]', ...args) }
+
+    log('monitor start', {
+      key,
+      title: game.title,
+      launcher: game.launcher,
+      id: game.id,
+      executablePath: game.executablePath,
+      installDir: game.installDir
+    })
+    const runPythonJson = (args) => new Promise((resolve) => {
+      const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
+      const scriptPath = path.join(base, 'scripts', 'proc.py')
+      const tryRun = (cmd) => {
+        const py = spawn(cmd, [scriptPath, ...args], { stdio: ['ignore', 'pipe', 'ignore'] })
+        let out = ''
+        py.stdout.on('data', (d) => (out += d.toString()))
+        py.on('error', () => {
+          if (cmd === 'python') return tryRun('py')
+          return resolve(null)
+        })
+        py.on('exit', () => {
+          try {
+            resolve(JSON.parse(out || '{}'))
+          } catch {
+            resolve(null)
+          }
+        })
+      }
+      tryRun('python')
+    })
+
     const poll = async () => {
-      // If session already finished, stop polling
       if (!this.running.has(key)) return
       try {
-        await new Promise((resolve) => {
-          const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-          const scriptPath = path.join(base, 'scripts', 'proc.py')
-          const filters = JSON.stringify({
+        // Attempt initial seeding within a generous window to catch delayed spawns
+        if (!seeded && (Date.now() - startTime) < seedWindowMs) {
+          const findFilters = JSON.stringify({
             executablePath: game.executablePath || '',
             installDir: game.installDir || '',
-            title: game.title || '',
-            pids: Array.from(stickyAlive.keys())
+            title: (game.title || '').toLowerCase(),
+            imageName: game.executablePath ? path.basename(game.executablePath) : '',
+            parentPid: this.running.get(key)?.parentPid || null
           })
-          const runPython = (cmd) => {
-            const py = spawn(cmd, [scriptPath, 'check', filters], { stdio: ['ignore', 'pipe', 'ignore'] })
-            let out = ''
-            py.stdout.on('data', (d) => (out += d.toString()))
-            py.on('error', () => {
-              if (cmd === 'python') return runPython('py')
-              return resolve(null)
-            })
-            py.on('exit', () => {
-              try {
-                const result = JSON.parse(out || '{}')
-                const matches = Array.isArray(result.matches) ? result.matches : []
-                const alivePids = Array.isArray(result.alivePids) ? result.alivePids : []
-                const running = !!result.running
-                // Update sticky set timestamps
-                const now = Date.now()
-                const potentialPids = matches.map((m) => m.pid).filter((pid) => Number.isFinite(pid))
-                for (const pid of [...alivePids, ...potentialPids]) {
-                  if (Number.isFinite(pid)) stickyAlive.set(pid, now)
-                }
-                // Expire old sticky pids
-                for (const [pid, ts] of Array.from(stickyAlive.entries())) {
-                  if (now - ts > stickyTtlMs) stickyAlive.delete(pid)
-                }
-
-                // Console debug in requested format
-                try {
-                  console.log(`[proc] potential matches PID: [${potentialPids.join(', ')}], Active: [${alivePids.join(', ')}]`)
-                } catch {}
-
-                if (alivePids.length > 0 || stickyAlive.size > 0 || (running && matches.length > 0)) {
-                  consecutiveNotRunning = 0
-                  const entry = this.running.get(key)
-                  if (entry) {
-                    entry.pids = Array.from(new Set([...(entry.pids || []), ...potentialPids, ...alivePids, ...Array.from(stickyAlive.keys())]))
-                  }
-                } else {
-                  // During initial grace period after launch, be lenient
-                  const withinGrace = Date.now() - startTime < 12000
-                  consecutiveNotRunning += 1
-                  const threshold = withinGrace ? 4 : 2 // ~12-16s in grace, then ~6s afterwards
-                  if (consecutiveNotRunning >= threshold) {
-                    this.finishSession(game)
-                    return resolve(null)
-                  }
-                }
-              } catch {}
-              return resolve(null)
-            })
+          const res = await runPythonJson(['find', findFilters])
+          const pids = Array.isArray(res?.pids) ? res.pids.filter((p) => Number.isFinite(p)) : []
+          if (DEBUG) {
+            log('find(seed)', { pids, matches: (res?.matches || []).slice(0, 5), ts: res?.ts })
           }
-          runPython('python')
-        })
-      } finally {
-        if (this.running.has(key)) {
-          setTimeout(poll, 3000)
+          if (pids.length > 0) {
+            trackedPids = new Set(pids)
+            seeded = true
+            const entry = this.running.get(key)
+            if (entry) entry.pids = [...trackedPids]
+          }
         }
+
+        if (trackedPids.size > 0) {
+          const aliveFilters = JSON.stringify({ pids: [...trackedPids] })
+          const aliveRes = await runPythonJson(['alive', aliveFilters])
+          const alive = Array.isArray(aliveRes?.pids) ? aliveRes.pids.filter((p) => Number.isFinite(p)) : []
+          if (DEBUG) log('alive(check)', { before: [...trackedPids], alive })
+          trackedPids = new Set(alive)
+          const entry = this.running.get(key)
+          if (entry) entry.pids = [...trackedPids]
+
+          
+        // Regular reacquire to catch new PIDs beyond initial seed window
+        if (seeded && trackedPids.size > 0) {
+          const findFilters = JSON.stringify({
+            executablePath: game.executablePath || '',
+            installDir: game.installDir || '',
+            title: (game.title || '').toLowerCase(),
+            imageName: game.executablePath ? path.basename(game.executablePath) : ''
+          });
+          let res = null;
+          try { 
+            res = await runPythonJson(['find', findFilters]); 
+          } catch (err) { 
+            log('periodic reacquire error', err); 
+            res = null; 
+          }
+          const newlyFound = Array.isArray(res?.pids) ? res.pids.filter((p) => Number.isFinite(p)) : [];
+          if (DEBUG) log('find(periodic)', { newlyFound, matches: (res?.matches || []).slice(0, 5) });
+          if (newlyFound.length > 0) {
+            trackedPids = new Set(newlyFound);
+            const entry = this.running.get(key);
+            if (entry) entry.pids = [...trackedPids];
+          }
+        }
+if (seeded && trackedPids.size === 0) {
+            // Possible handoff from launcher stub -> real game process. Try re-acquire within grace.
+            if (emptySinceTs == null) emptySinceTs = Date.now()
+            const since = Date.now() - emptySinceTs
+            const findFilters = JSON.stringify({
+              executablePath: game.executablePath || '',
+              installDir: game.installDir || '',
+              title: (game.title || '').toLowerCase(),
+              imageName: game.executablePath ? path.basename(game.executablePath) : '',
+              parentPid: this.running.get(key)?.parentPid || null
+            })
+            const res = await runPythonJson(['find', findFilters])
+            const reFound = Array.isArray(res?.pids) ? res.pids.filter((p) => Number.isFinite(p)) : []
+            if (DEBUG) log('find(reacquire)', { reFound, matches: (res?.matches || []).slice(0, 5), since })
+            if (reFound.length > 0) {
+              trackedPids = new Set(reFound)
+              if (entry) entry.pids = [...trackedPids]
+              emptySinceTs = null
+            } else if (since >= graceAfterEmptyMs) {
+              log('ending session: no alive PIDs after grace window')
+              this.finishSession(game, 'no-alive-pids-after-grace')
+              return
+            }
+          } else {
+            emptySinceTs = null
+          }
+        } else if (seeded) {
+          // Seeded but nothing alive. Try a quick re-acquire attempt before ending.
+          if (emptySinceTs == null) emptySinceTs = Date.now()
+          const since = Date.now() - emptySinceTs
+          const findFilters = JSON.stringify({
+            executablePath: game.executablePath || '',
+            installDir: game.installDir || '',
+            title: (game.title || '').toLowerCase(),
+            imageName: game.executablePath ? path.basename(game.executablePath) : '',
+            parentPid: this.running.get(key)?.parentPid || null
+          })
+          const res = await runPythonJson(['find', findFilters])
+          const reFound = Array.isArray(res?.pids) ? res.pids.filter((p) => Number.isFinite(p)) : []
+          if (DEBUG) log('find(reacquire-initial)', { reFound, matches: (res?.matches || []).slice(0, 5), since })
+          if (reFound.length > 0) {
+            trackedPids = new Set(reFound)
+            const entry = this.running.get(key)
+            if (entry) entry.pids = [...trackedPids]
+            emptySinceTs = null
+          } else if (since >= graceAfterEmptyMs) {
+            log('ending session: seeded but no PIDs found after grace window')
+            this.finishSession(game, 'seeded-no-pids-after-grace')
+            return
+          }
+        } else if ((Date.now() - startTime) >= seedWindowMs) {
+          // Could not seed within window -> consider it closed
+          log('ending session: could not seed any PIDs within seed window')
+          this.finishSession(game, 'no-seed-within-window')
+          return
+        }
+      } finally {
+        if (this.running.has(key)) setTimeout(poll, 200)
       }
     }
-    setTimeout(poll, 3000)
+    setTimeout(poll, 150)
   }
 }

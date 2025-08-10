@@ -136,3 +136,15 @@ body { margin:0; font-family: Inter, system-ui, Arial, sans-serif; background:ra
 .menu-meta .meta-chip.launcher { text-transform: capitalize }
 .menu-actions { margin-top: auto; display:flex; gap: 10px; justify-content:flex-end }
 
+/* Updater */
+.updater-screen {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 20% 10%, #1b1f2a, #0e1117);
+  color: #e6edf3;
+}
+.updater-card { width: 460px; max-width: 86vw; padding: 28px; border-radius: 14px; background: #161b22; box-shadow: 0 10px 30px rgba(0,0,0,0.4); text-align: center; }
+.updater-title { font-size: 20px; font-weight: 600; margin-bottom: 18px; }
+.updater-spinner { width: 42px; height: 42px; margin: 0 auto 12px; border: 4px solid rgba(255,255,255,0.2); border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.9s linear infinite; }
+.updater-note { margin-top: 8px; opacity: 0.85; font-size: 13px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
