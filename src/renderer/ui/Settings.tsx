@@ -24,6 +24,11 @@ export function Settings({ onSaved }: Props) {
     onSaved?.()
   }
 
+  async function pickDirectoryAndSet(updateFn: (path: string) => void) {
+    const path = await window.electronAPI.pickDirectory()
+    if (path) updateFn(path)
+  }
+
   function addSteamLibrary() {
     update((s) => ({ ...s, steam: { ...s.steam, customLibraries: [...s.steam.customLibraries, ''] } }))
   }
@@ -54,13 +59,15 @@ export function Settings({ onSaved }: Props) {
             type="text"
             placeholder="C:\\Program Files (x86)\\Steam"
             value={settings.steam.steamPath}
+            className="path-input browseable"
+            onClick={() => pickDirectoryAndSet((p) => update((s) => ({ ...s, steam: { ...s.steam, steamPath: p } })))}
             onChange={(e) => update((s) => ({ ...s, steam: { ...s.steam, steamPath: e.target.value } }))}
           />
         </label>
         <div className="field-list">
           <div className="row">
             <div className="label">Steam libraries</div>
-            <button onClick={addSteamLibrary}>Add</button>
+            <button className="btn" onClick={addSteamLibrary}>Add</button>
           </div>
           {settings.steam.customLibraries.map((p, i) => (
             <div className="row" key={i}>
@@ -68,9 +75,11 @@ export function Settings({ onSaved }: Props) {
                 type="text"
                 placeholder="D:\\SteamLibrary"
                 value={p}
+                className="path-input browseable"
+                onClick={() => pickDirectoryAndSet((picked) => changeSteamLibrary(i, picked))}
                 onChange={(e) => changeSteamLibrary(i, e.target.value)}
               />
-              <button onClick={() => removeSteamLibrary(i)}>Remove</button>
+              <button className="btn btn-danger" onClick={() => removeSteamLibrary(i)}>Remove</button>
             </div>
           ))}
         </div>
@@ -84,14 +93,16 @@ export function Settings({ onSaved }: Props) {
             type="text"
             placeholder="C:\\ProgramData\\Epic\\EpicGamesLauncher\\Data\\Manifests"
             value={settings.epic.manifestDir}
+            className="path-input browseable"
+            onClick={() => pickDirectoryAndSet((p) => update((s) => ({ ...s, epic: { ...s.epic, manifestDir: p } })))}
             onChange={(e) => update((s) => ({ ...s, epic: { ...s.epic, manifestDir: e.target.value } }))}
           />
         </label>
       </section>
 
       <div className="actions">
-        <button className="launch" onClick={save}>Save</button>
-        <button onClick={async () => {
+        <button className="btn btn-primary" onClick={save}>Save</button>
+        <button className="btn btn-danger" onClick={async () => {
           const ok = confirm('Reset all playtime statistics? This cannot be undone.')
           if (!ok) return
           await (window as any).electronAPI.resetAllPlaytime()
@@ -102,7 +113,7 @@ export function Settings({ onSaved }: Props) {
       <section>
         <h2>Debug: Steam</h2>
         <div style={{display:'flex', gap:8}}>
-          <button onClick={async () => {
+          <button className="btn" onClick={async () => {
             const dbg = await (window as any).electronAPI.debugSteam()
             alert(JSON.stringify(dbg, null, 2))
           }}>Show Steam Debug Info</button>

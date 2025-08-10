@@ -11,6 +11,11 @@ export class SettingsService {
       },
       epic: {
         manifestDir: ''
+      },
+      // UI preferences persisted between sessions
+      ui: {
+        viewMode: 'large', // 'large' | 'small' | 'list'
+        sort: 'az' // 'az' | 'za'
       }
     }
   }

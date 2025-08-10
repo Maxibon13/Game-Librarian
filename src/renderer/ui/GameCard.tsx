@@ -1,13 +1,15 @@
 import React, { useState } from 'react'
 import type { Game } from './App'
-import hoverSound from '../../sounds/hover.ogg'
+import hoverSound from '../../sounds/Hover.ogg'
 
 type Props = {
   game: Game
   onLaunch: () => void
+  variant?: 'large' | 'small' | 'list'
+  onOpen?: () => void
 }
 
-export function GameCard({ game, onLaunch }: Props) {
+export function GameCard({ game, onLaunch, onOpen, variant = 'large' }: Props) {
   const [hover, setHover] = useState(false)
   const [audioPlayed, setAudioPlayed] = useState(false)
 
@@ -27,32 +29,44 @@ export function GameCard({ game, onLaunch }: Props) {
     setTimeout(() => setAudioPlayed(false), 100)
   }
 
+  const thumbStyle: React.CSSProperties = {
+    backgroundImage: gameThumb(game),
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundColor: '#2a2d35'
+  }
+
+  const metaInline = (
+    <div className="meta-inline">
+      <span className="tag launcher">{game.launcher}</span>
+      <span className="tag time">{formatMinutes(game.playtimeMinutes ?? 0)}</span>
+    </div>
+  )
+
+  const handleOpen = () => { onOpen?.() }
+
+  if (variant === 'list') {
+    return (
+      <div className={`card list ${hover ? 'hover' : ''}`} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleOpen}>
+        <div className="thumb" aria-hidden style={thumbStyle} />
+        <div className="content">
+          <div className="title-row">
+            <div className="title">{game.title}</div>
+            {metaInline}
+          </div>
+        </div>
+        <button className="launch" onClick={(e) => { e.stopPropagation(); onLaunch() }}>Launch</button>
+      </div>
+    )
+  }
+
   return (
-    <div
-      className={`card ${hover ? 'hover' : ''}`}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      <div
-        className="thumb"
-        aria-hidden
-        style={{
-          backgroundImage: gameThumb(game),
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundColor: '#2a2d35'
-        }}
-      />
-      <div className="title">{game.title}</div>
+    <div className={`card ${variant} ${hover ? 'hover' : ''}`} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleOpen}>
+      <div className="thumb" aria-hidden style={thumbStyle} />
+      <div className="title-row"><div className="title">{game.title}</div>{metaInline}</div>
       {hover && (
         <div className="overlay">
-          <div className="meta">
-            <span>Launcher: {game.launcher}</span>
-            <span>Playtime: {formatMinutes(game.playtimeMinutes ?? 0)}</span>
-          </div>
-          <button className="launch" onClick={onLaunch}>
-            Launch
-          </button>
+          <button className="launch" onClick={(e) => { e.stopPropagation(); onLaunch() }}>Launch</button>
         </div>
       )}
     </div>

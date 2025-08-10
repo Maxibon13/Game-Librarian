@@ -37,7 +37,7 @@ export class PlaytimeService {
     }
 
     // Windows process watcher: if we know installDir or executablePath, watch for the game process
-    if (os.platform() === 'win32' && (game.installDir || game.executablePath)) {
+    if (os.platform() === 'win32' && (game.installDir || game.executablePath || game.title)) {
       this.monitorWindowsProcessForGame(game)
     }
   }
@@ -143,7 +143,7 @@ export class PlaytimeService {
     try {
       if (platform === 'win32') {
         const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-        const scriptPath = path.join(base, 'scripts', 'process_kill.py')
+        const scriptPath = path.join(base, 'scripts', 'proc.py')
         const filters = JSON.stringify({
           executablePath: game.executablePath || '',
           installDir: game.installDir || '',
@@ -155,7 +155,7 @@ export class PlaytimeService {
         })
         await new Promise((resolve) => {
           const runCmd = (cmd) => {
-            const py = spawn(cmd, [scriptPath, filters], { stdio: ['ignore', 'pipe', 'ignore'] })
+            const py = spawn(cmd, [scriptPath, 'kill', filters], { stdio: ['ignore', 'pipe', 'ignore'] })
             py.on('error', () => {
               if (cmd === 'python') return runCmd('py')
               return resolve(null)
@@ -182,14 +182,14 @@ export class PlaytimeService {
     return await new Promise((resolve) => {
       try {
         const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-        const scriptPath = path.join(base, 'scripts', 'process_detect.py')
+        const scriptPath = path.join(base, 'scripts', 'proc.py')
         const filters = JSON.stringify({
           executablePath: game.executablePath || '',
           installDir: game.installDir || '',
           title: game.title || ''
         })
         const runCmd = (cmd) => {
-          const py = spawn(cmd, [scriptPath, filters], { stdio: ['ignore', 'pipe', 'ignore'] })
+          const py = spawn(cmd, [scriptPath, 'check', filters], { stdio: ['ignore', 'pipe', 'ignore'] })
           let out = ''
           py.stdout.on('data', (d) => (out += d.toString()))
           py.on('error', () => {
@@ -201,7 +201,8 @@ export class PlaytimeService {
               const result = JSON.parse(out || '{}')
               const matches = Array.isArray(result.matches) ? result.matches : []
               const pids = matches.map((m) => m.pid).filter((pid) => Number.isFinite(pid))
-              return resolve(pids)
+              const alive = Array.isArray(result.alivePids) ? result.alivePids : []
+              return resolve(Array.from(new Set([...pids, ...alive])).filter((pid) => Number.isFinite(pid)))
             } catch {
               return resolve([])
             }
@@ -231,22 +232,24 @@ export class PlaytimeService {
     const key = `${game.launcher}:${game.id}`
     let consecutiveNotRunning = 0
     const startTime = Date.now()
-    // Maintain last-known-alive PIDs to avoid premature end when filtering narrows down
-    const stickyAlive = new Set()
+    // Maintain last-known-alive PIDs to avoid premature end; expire stale ones
+    const stickyAlive = new Map() // pid -> lastSeenMs
+    const stickyTtlMs = 4000
     const poll = async () => {
       // If session already finished, stop polling
       if (!this.running.has(key)) return
       try {
         await new Promise((resolve) => {
           const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-          const scriptPath = path.join(base, 'scripts', 'process_detect.py')
+          const scriptPath = path.join(base, 'scripts', 'proc.py')
           const filters = JSON.stringify({
             executablePath: game.executablePath || '',
             installDir: game.installDir || '',
-            title: game.title || ''
+            title: game.title || '',
+            pids: Array.from(stickyAlive.keys())
           })
           const runPython = (cmd) => {
-            const py = spawn(cmd, [scriptPath, filters], { stdio: ['ignore', 'pipe', 'ignore'] })
+            const py = spawn(cmd, [scriptPath, 'check', filters], { stdio: ['ignore', 'pipe', 'ignore'] })
             let out = ''
             py.stdout.on('data', (d) => (out += d.toString()))
             py.on('error', () => {
@@ -258,24 +261,34 @@ export class PlaytimeService {
                 const result = JSON.parse(out || '{}')
                 const matches = Array.isArray(result.matches) ? result.matches : []
                 const alivePids = Array.isArray(result.alivePids) ? result.alivePids : []
-                if (result?.debug) {
-                  console.log('[ProcessDetect][debug]', JSON.stringify(result.debug))
+                const running = !!result.running
+                // Update sticky set timestamps
+                const now = Date.now()
+                const potentialPids = matches.map((m) => m.pid).filter((pid) => Number.isFinite(pid))
+                for (const pid of [...alivePids, ...potentialPids]) {
+                  if (Number.isFinite(pid)) stickyAlive.set(pid, now)
                 }
-                if (alivePids.length > 0) {
-                  for (const pid of alivePids) stickyAlive.add(pid)
+                // Expire old sticky pids
+                for (const [pid, ts] of Array.from(stickyAlive.entries())) {
+                  if (now - ts > stickyTtlMs) stickyAlive.delete(pid)
                 }
-                if (matches.length > 0 || alivePids.length > 0 || stickyAlive.size > 0) {
+
+                // Console debug in requested format
+                try {
+                  console.log(`[proc] potential matches PID: [${potentialPids.join(', ')}], Active: [${alivePids.join(', ')}]`)
+                } catch {}
+
+                if (alivePids.length > 0 || stickyAlive.size > 0 || (running && matches.length > 0)) {
                   consecutiveNotRunning = 0
                   const entry = this.running.get(key)
                   if (entry) {
-                    const pidsFromMatches = matches.map((m) => m.pid).filter((pid) => Number.isFinite(pid))
-                    entry.pids = Array.from(new Set([...(entry.pids || []), ...pidsFromMatches, ...alivePids]))
+                    entry.pids = Array.from(new Set([...(entry.pids || []), ...potentialPids, ...alivePids, ...Array.from(stickyAlive.keys())]))
                   }
                 } else {
                   // During initial grace period after launch, be lenient
-                  const withinGrace = Date.now() - startTime < 15000
+                  const withinGrace = Date.now() - startTime < 12000
                   consecutiveNotRunning += 1
-                  const threshold = withinGrace ? 6 : 3 // ~18s in grace, then ~9s afterwards
+                  const threshold = withinGrace ? 4 : 2 // ~12-16s in grace, then ~6s afterwards
                   if (consecutiveNotRunning >= threshold) {
                     this.finishSession(game)
                     return resolve(null)
