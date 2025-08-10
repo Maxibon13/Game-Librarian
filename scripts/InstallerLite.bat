@@ -80,9 +80,42 @@ git clean -fdx || goto :fail
 REM Update submodules if any (no-op if none)
 git submodule update --init --recursive --depth 1 >nul 2>nul
 
+REM --- DEPENDENCIES ---
+echo [INFO] Preparing Node.js dependencies ...
+where npm >nul 2>nul || (
+  echo [ERROR] npm is required but was not found in PATH.
+  echo         Please install Node.js (which includes npm): https://nodejs.org/
+  goto :fail
+)
+
+if exist "node_modules" (
+  echo [INFO] Removing existing node_modules ...
+  rmdir /s /q "node_modules"
+)
+
+if exist "package-lock.json" (
+  echo [INFO] Installing dependencies with: npm ci --no-audit --no-fund
+  npm ci --no-audit --no-fund || goto :npm_install_fallback
+) else (
+  goto :npm_install
+)
+goto :deps_done
+
+:npm_install_fallback
+echo [WARN] npm ci failed; falling back to: npm install --no-audit --no-fund
+
+:npm_install
+npm install --no-audit --no-fund || goto :fail
+
+:deps_done
 echo [INFO] Repository synchronized to branch: %BRANCH%
+echo [INFO] Dependencies installed successfully.
 popd >nul
 endlocal
 exit /b 0
 
-
+:fail
+echo [ERROR] Installer failed. The repository could not be synchronized or dependencies failed to install.
+popd >nul 2>nul
+endlocal
+exit /b 1
