@@ -1,98 +1,93 @@
 @echo off
-setlocal EnableDelayedExpansion
+setlocal EnableExtensions EnableDelayedExpansion
 
-REM === CONFIG ===
+REM ==========================================
+REM Game-Librarian Installer / Updater (Git)
+REM ==========================================
+
+REM --- CONFIG ---
 set "REPO_URL=https://github.com/Maxibon13/Game-Librarian.git"
 set "BRANCH=main"
 
-REM Install/update into INSTALL_DIR if provided; otherwise PARENT directory of this script
+REM --- TARGET DIR ---
 set "SCRIPT_DIR=%~dp0"
 if defined INSTALL_DIR (
-    set "TARGET_DIR=%INSTALL_DIR%"
- ) else (
-    set "TARGET_DIR=%SCRIPT_DIR%.."
- )
-
-REM Normalize TARGET_DIR by pushing then popping
-if not exist "%TARGET_DIR%" (
-    mkdir "%TARGET_DIR%" >nul 2>nul
+  set "TARGET_DIR=%INSTALL_DIR%"
+) else (
+  set "TARGET_DIR=%SCRIPT_DIR%.."
 )
-pushd "%TARGET_DIR%" >nul
+
+if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%" >nul 2>nul
+pushd "%TARGET_DIR%" >nul || (
+  echo [ERROR] Failed to access target directory: "%TARGET_DIR%"
+  exit /b 1
+)
 set "TARGET_DIR=%CD%"
-popd >nul
 
 echo [INFO] Target directory: "%TARGET_DIR%"
 
-pushd "%TARGET_DIR%" >nul
-
-REM Prefer git if available, otherwise fallback to ZIP download
-where git >nul 2>nul
-if errorlevel 1 goto :zip_fallback
-
-if not exist ".git\" (
-    echo [INFO] [git] Cloning repository into target directory ...
-    git clone --depth 1 -b %BRANCH% "%REPO_URL%" .
-    if errorlevel 1 (
-        echo [ERROR] [git] git clone failed.
-        popd >nul
-        exit /b 1
-    )
-    echo [INFO] [git] Repository cloned to %BRANCH%.
-) else (
-    echo [INFO] [git] Updating existing repository (git pull --ff-only)...
-    git checkout %BRANCH%
-    if errorlevel 1 (
-        echo [ERROR] [git] git checkout %BRANCH% failed.
-        popd >nul
-        exit /b 1
-    )
-    git pull --ff-only
-    if errorlevel 1 (
-        echo [WARN] [git] git pull fast-forward failed; attempting fetch + hard reset to origin/%BRANCH% ...
-        git fetch --all --prune
-        git reset --hard origin/%BRANCH%
-        if errorlevel 1 (
-            echo [ERROR] [git] Could not synchronize repository to origin/%BRANCH%.
-            popd >nul
-            exit /b 1
-        )
-    )
-    echo [INFO] [git] Repository is synchronized with origin/%BRANCH%.
+REM --- REQUIREMENTS ---
+where git >nul 2>nul || (
+  echo [ERROR] Git is required but was not found in PATH.
+  echo         Please install Git: https://git-scm.com/download/win
+  popd >nul & exit /b 1
 )
-goto :done
 
-:zip_fallback
-echo [INFO] [zip] git not available; falling back to ZIP download.
-set "ZIP_URL=https://codeload.github.com/Maxibon13/Game-Librarian/zip/refs/heads/%BRANCH%"
-set "TMP_ZIP=%TEMP%\gamelibrarian_repo.zip"
-del /q "%TMP_ZIP%" >nul 2>nul
-echo [INFO] [zip] Downloading archive ...
-powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing '%ZIP_URL%' -OutFile '%TMP_ZIP%'" || (
-    echo [ERROR] [zip] Download failed.
-    popd >nul & exit /b 1
-)
-echo [INFO] [zip] Clearing target directory ...
-for /f %%I in ('dir /b') do (
-  if /I not "%%I"=="." if /I not "%%I"==".." rmdir /s /q "%%I" 2>nul & del /f /q "%%I" 2>nul
-)
-echo [INFO] [zip] Extracting archive ...
-powershell -NoProfile -Command "Expand-Archive -Force '%TMP_ZIP%' '%TARGET_DIR%'" || (
-    echo [ERROR] [zip] Extract failed.
-    popd >nul & exit /b 1
-)
-for /d %%D in ("%TARGET_DIR%\Game-Librarian-%BRANCH%") do (
-  echo [INFO] [zip] Moving files into place ...
-  xcopy /e /h /y "%%~fD\*" "%TARGET_DIR%\" >nul
-  rmdir /s /q "%%~fD" >nul 2>nul
-)
-del /q "%TMP_ZIP%" >nul 2>nul
-echo [INFO] [zip] Repository synchronized via ZIP.
+REM Avoid interactive prompts from Git (credentials, etc.)
+set "GIT_TERMINAL_PROMPT=0"
 
-:done
+REM Silence safe.directory warnings when run elevated
+git config --global --add safe.directory "%CD%" >nul 2>nul
 
+REM --- IF NOT A REPO: bootstrap; OTHERWISE: update ---
+git rev-parse --git-dir >nul 2>nul
+if errorlevel 1 goto :bootstrap
+goto :update
+
+:bootstrap
+echo [INFO] Initializing a new git repository in "%CD%" ...
+git init || goto :fail
+REM Ensure origin is set to the desired URL (set or add)
+git remote set-url origin "%REPO_URL%" 2>nul || git remote add origin "%REPO_URL%" || goto :fail
+
+echo [INFO] Fetching branch "%BRANCH%" (shallow) ...
+git fetch --force --tags --prune --depth=1 origin "%BRANCH%" || goto :fail
+
+echo [INFO] Checking out branch "%BRANCH%" from origin ...
+git checkout -B "%BRANCH%" "origin/%BRANCH%" || goto :fail
+
+echo [INFO] Resetting working tree to origin/%BRANCH% ...
+git reset --hard "origin/%BRANCH%" || goto :fail
+git clean -fdx || goto :fail
+goto :submodules
+
+:update
+echo [INFO] Updating existing repository ...
+REM Keep remote origin URL correct
+git remote set-url origin "%REPO_URL%" 2>nul || git remote add origin "%REPO_URL%" || goto :fail
+
+echo [INFO] Fetching latest changes (with prune and tags) ...
+git fetch --force --tags --prune origin || goto :fail
+
+echo [INFO] Ensuring branch "%BRANCH%" tracks origin/%BRANCH% ...
+git checkout -B "%BRANCH%" "origin/%BRANCH%" || goto :fail
+
+echo [INFO] Resetting working tree to origin/%BRANCH% ...
+git reset --hard "origin/%BRANCH%" || goto :fail
+git clean -fdx || goto :fail
+
+:submodules
+REM Update submodules if any (no-op if none)
+git submodule update --init --recursive --depth 1 >nul 2>nul
+
+echo [INFO] Repository synchronized to branch: %BRANCH%
 popd >nul
-
-echo [INFO] Done.
+endlocal
 exit /b 0
 
-
+:fail
+echo [ERROR] Installer failed. The repository could not be synchronized.
+echo         You may remove "%TARGET_DIR%\.git" and re-run this script if issues persist.
+popd >nul 2>nul
+endlocal
+exit /b 1
