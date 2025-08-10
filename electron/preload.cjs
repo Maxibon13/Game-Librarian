@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Updater
   getAppConfig: () => ipcRenderer.invoke('updater:getConfig'),
   checkForUpdate: () => ipcRenderer.invoke('updater:check'),
+  runUpdater: () => ipcRenderer.invoke('updater:run'),
   initBackend: () => ipcRenderer.invoke('backend:init')
 })
 

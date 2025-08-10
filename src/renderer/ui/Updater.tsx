@@ -28,8 +28,9 @@ export function Updater({ onReady }: { onReady: () => void }) {
         }
         if (res.updateAvailable) {
           setState({ phase: 'updateAvailable', localVersion: res.localVersion, remoteVersion: res.remoteVersion, repository: res.repository })
-          // For now, just proceed to app after brief delay
-          setTimeout(async () => { await api.initBackend(); onReady() }, 800)
+          // Optionally run updater script (user's rewritten updater)
+          try { await api.runUpdater() } catch {}
+          setTimeout(async () => { await api.initBackend(); onReady() }, 600)
         } else {
           setState({ phase: 'upToDate', localVersion: res.localVersion })
           await api.initBackend()

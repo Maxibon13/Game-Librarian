@@ -41,16 +41,25 @@
       "src/main/**",
       "src/renderer/**",
       "scripts/**",
-      "appconfig.json",
       "src/sounds/**",
       "package.json"
     ],
     "extraResources": [
-      { "from": "scripts", "to": "scripts", "filter": ["**/*"] }
+      {
+        "from": "scripts",
+        "to": "scripts",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
-    "directories": { "buildResources": "build" },
+    "directories": {
+      "buildResources": "build"
+    },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "build/icon.ico"
     },
     "nsis": {
@@ -60,5 +69,3 @@
     }
   }
 }
-
-

@@ -17,16 +17,14 @@ let playtimeService = null
 let settingsService = null
 let backendInitialized = false
 
-async function loadAppConfig() {
-  try {
-    const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-    const p = path.join(base, 'appconfig.json')
-    const raw = await fs.readFile(p, 'utf8')
-    const cfg = JSON.parse(raw)
-    return cfg
-  } catch {
-    return { appName: 'Game Librarian', appRepository: 'https://github.com/Maxibon13/Game-Librarian', appVersion: '0.1.0', canUpdate: true }
-  }
+const APP_NAME = 'Game Librarian'
+const APP_REPOSITORY = 'https://github.com/Maxibon13/Game-Librarian'
+const LOCAL_VERSION_PATH = process.platform === 'win32'
+  ? 'C:/Program Files/Game Librarian/version.txt'
+  : '/opt/GameLibrarian/version.txt'
+
+async function getLocalVersion() {
+  try { return (await fs.readFile(LOCAL_VERSION_PATH, 'utf8')).trim() } catch { return '0.0.0' }
 }
 
 function parseOwnerRepo(repoUrl) {
@@ -48,22 +46,22 @@ function compareSemver(a, b) {
 }
 
 async function checkForUpdate() {
-  const cfg = await loadAppConfig()
-  const { owner, repo } = parseOwnerRepo(cfg.appRepository || cfg.AppRepository || 'https://github.com/Maxibon13/Game-Librarian')
+  const cfg = { appRepository: APP_REPOSITORY }
+  const localVersion = await getLocalVersion()
+  const { owner, repo } = parseOwnerRepo(cfg.appRepository || 'https://github.com/Maxibon13/Game-Librarian')
   const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/package.json`
   try {
     const res = await fetch(rawUrl)
     if (!res.ok) throw new Error(`http ${res.status}`)
     const remotePkg = await res.json()
     const remoteVersion = remotePkg?.version || '0.0.0'
-    const localVersion = cfg.appVersion || cfg.AppVersion || '0.0.0'
     const cmp = compareSemver(remoteVersion, localVersion)
     return {
       ok: true,
-      updateAvailable: cmp > 0 && !!(cfg.canUpdate ?? cfg.CanUpdate ?? true),
+      updateAvailable: cmp > 0,
       localVersion,
       remoteVersion,
-      repository: cfg.appRepository || cfg.AppRepository
+      repository: cfg.appRepository
     }
   } catch (e) {
     return { ok: false, error: String(e) }
@@ -137,14 +135,13 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   // Expose updater IPC before backend is initialized
-  ipcMain.handle('updater:getConfig', async () => loadAppConfig())
+  ipcMain.handle('updater:getConfig', async () => ({ appName: APP_NAME, appRepository: APP_REPOSITORY, appVersion: await getLocalVersion(), canUpdate: true }))
   ipcMain.handle('updater:check', async () => {
     // Prefer Python helper if available (parity with other scripts)
     try {
       const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
       const scriptPath = path.join(base, 'scripts', 'updater.py')
-      const cfg = await loadAppConfig()
-      const payload = JSON.stringify({ repository: cfg.appRepository || cfg.AppRepository, localVersion: cfg.appVersion || cfg.AppVersion, canUpdate: cfg.canUpdate ?? cfg.CanUpdate ?? true })
+      const payload = JSON.stringify({ repository: APP_REPOSITORY, localVersion: await getLocalVersion(), canUpdate: true, useGit: true })
       const run = (cmd) => new Promise((resolve, reject) => {
         const { spawn } = require('node:child_process')
         const p = spawn(cmd, [scriptPath, 'check', payload], { stdio: ['ignore','pipe','ignore'] })
@@ -156,9 +153,30 @@ app.whenReady().then(async () => {
         })
       })
       let res = await run('python').catch(async () => await run('py').catch(() => null))
-      if (res && res.ok !== undefined) return res
+      if (res && res.ok !== undefined) {
+        try { console.log('[Updater] versions', { local: res.localVersion, remote: res.remoteVersion, updateAvailable: res.updateAvailable, source: res.source || 'python' }) } catch {}
+        return res
+      }
     } catch {}
-    return checkForUpdate()
+    const fb = await checkForUpdate()
+    try { console.log('[Updater] versions', { local: fb.localVersion, remote: fb.remoteVersion, updateAvailable: fb.updateAvailable, source: 'fallback-js' }) } catch {}
+    return fb
+  })
+  ipcMain.handle('updater:run', async () => {
+    try {
+      const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
+      const scriptPath = path.join(base, 'scripts', 'updater.py')
+      const run = (cmd) => new Promise((resolve, reject) => {
+        const { spawn } = require('node:child_process')
+        const p = spawn(cmd, [scriptPath], { stdio: 'inherit' })
+        p.on('error', reject)
+        p.on('close', (code) => resolve({ ok: code === 0, code }))
+      })
+      let res = await run('python').catch(async () => await run('py').catch(() => ({ ok: false })))
+      return res
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
   })
   ipcMain.handle('backend:init', async () => { await registerIpcAndServices(); return { ok: true } })
   await createWindow()
