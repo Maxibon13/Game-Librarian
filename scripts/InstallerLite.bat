@@ -30,38 +30,16 @@ where git >nul 2>nul
 if errorlevel 1 goto :zip_fallback
 
 if not exist ".git\" (
-    echo [INFO] [git] Initializing repository in-place...
-    git init
+    echo [INFO] [git] Cloning repository into target directory ...
+    git clone --depth 1 -b %BRANCH% "%REPO_URL%" .
     if errorlevel 1 (
-        echo [ERROR] [git] git init failed.
+        echo [ERROR] [git] git clone failed.
         popd >nul
         exit /b 1
     )
-    git remote add origin "%REPO_URL%" 2>nul
-    echo [INFO] [git] Fetching %BRANCH% ...
-    git fetch --depth 1 origin %BRANCH%
-    if errorlevel 1 (
-        echo [ERROR] [git] git fetch failed.
-        popd >nul
-        exit /b 1
-    )
-    echo [INFO] [git] Checking out %BRANCH% ...
-    git checkout -f -B %BRANCH% origin/%BRANCH%
-    if errorlevel 1 (
-        echo [ERROR] [git] git checkout failed.
-        popd >nul
-        exit /b 1
-    )
-    git branch --set-upstream-to=origin/%BRANCH% %BRANCH% >nul 2>nul
-    echo [INFO] [git] Repository initialized and checked out to %BRANCH%.
+    echo [INFO] [git] Repository cloned to %BRANCH%.
 ) else (
-    echo [INFO] [git] Updating existing repository...
-    git fetch --all --prune
-    if errorlevel 1 (
-        echo [ERROR] [git] git fetch failed.
-        popd >nul
-        exit /b 1
-    )
+    echo [INFO] [git] Updating existing repository (git pull --ff-only)...
     git checkout %BRANCH%
     if errorlevel 1 (
         echo [ERROR] [git] git checkout %BRANCH% failed.
@@ -70,7 +48,8 @@ if not exist ".git\" (
     )
     git pull --ff-only
     if errorlevel 1 (
-        echo [WARN] [git] git pull fast-forward failed; attempting hard reset to origin/%BRANCH% ...
+        echo [WARN] [git] git pull fast-forward failed; attempting fetch + hard reset to origin/%BRANCH% ...
+        git fetch --all --prune
         git reset --hard origin/%BRANCH%
         if errorlevel 1 (
             echo [ERROR] [git] Could not synchronize repository to origin/%BRANCH%.
