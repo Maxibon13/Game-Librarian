@@ -32,6 +32,7 @@ export function App() {
   const [modeAnim, setModeAnim] = useState(false)
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [masterVolume, setMasterVolume] = useState(1)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
 
   useEffect(() => {
     const api = (window as any).electronAPI
@@ -76,6 +77,14 @@ export function App() {
         setAudioEnabled(audio.enabled !== false)
         const mv = typeof audio.masterVolume === 'number' ? audio.masterVolume : 1
         setMasterVolume(Math.max(0, Math.min(1, mv)))
+      }).catch(() => {})
+    }
+
+    // Load app version for watermark
+    if (api?.getAppConfig) {
+      api.getAppConfig().then((cfg: any) => {
+        const v = cfg?.appVersion
+        if (typeof v === 'string' && v.length > 0) setAppVersion(v)
       }).catch(() => {})
     }
   }, [])
@@ -244,6 +253,12 @@ export function App() {
           onClose={() => onCloseMenu(setMenu, audioEnabled, masterVolume)}
           onLaunch={() => { onLaunch(menu.game, setStarting, audioEnabled, masterVolume); onCloseMenu(setMenu, audioEnabled, masterVolume) }}
         />
+      )}
+
+      {appVersion && (
+        <div className="version-watermark" aria-hidden>
+          v{appVersion}
+        </div>
       )}
     </div>
   )

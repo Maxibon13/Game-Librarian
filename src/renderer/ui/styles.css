@@ -162,3 +162,22 @@ body { margin:0; font-family: Inter, system-ui, Arial, sans-serif; background:ra
 .updater-console { text-align:left; margin-top: 10px; height: 180px; overflow:auto; background: #0f141b; border:1px solid #222733; border-radius:10px; padding:10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.4; color:#c9d1d9; }
 .updater-console .console-line { white-space: pre-wrap; word-break: break-word; opacity:.92 }
 
+/* Version watermark */
+.version-watermark {
+  position: fixed;
+  left: 12px;
+  bottom: 10px;
+  z-index: 5;
+  font-size: 12px;
+  letter-spacing: .2px;
+  color: rgba(230,231,235, .65);
+  background: rgba(20,22,27, .6);
+  border: 1px solid rgba(38,42,51,.85);
+  box-shadow: 0 6px 18px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,0.03);
+  padding: 4px 8px;
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  user-select: none;
+  pointer-events: none;
+}
+
