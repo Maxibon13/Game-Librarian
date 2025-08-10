@@ -55,6 +55,23 @@ function compareSemver(a, b) {
   return a3 - b3
 }
 
+// Attempt to stop the Vite dev server to clean up the dev console (Windows only)
+async function stopDevViteIfRunning() {
+  try {
+    const isDev = !app.isPackaged
+    if (!isDev) return
+    if (process.platform !== 'win32') return
+    await new Promise((resolve) => {
+      const ps = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+        // Find PID that owns port 5173 and kill its process tree
+        "try { $p = Get-NetTCPConnection -State Listen -LocalPort 5173 -ErrorAction Stop | Select-Object -ExpandProperty OwningProcess -Unique; if ($p) { taskkill /PID $p /T /F | Out-Null } } catch {}"
+      ], { stdio: 'ignore' })
+      ps.on('close', () => resolve())
+      ps.on('error', () => resolve())
+    })
+  } catch {}
+}
+
 async function checkForUpdate() {
   const cfg = { appRepository: APP_REPOSITORY }
   const localVersion = await getLocalVersion()
@@ -244,8 +261,13 @@ app.whenReady().then(async () => {
         stdio: 'ignore'
       })
       child.unref()
-      // Give the process a tick to start, then exit the app
-      setTimeout(() => { try { app.quit() } catch {} }, 150)
+      // In dev, stop Vite to clean up the console instead of quitting the app.
+      // In production, quit the app as before.
+      if (isDev) {
+        await stopDevViteIfRunning()
+      } else {
+        setTimeout(() => { try { app.quit() } catch {} }, 150)
+      }
       return { ok: true }
     } catch (e) {
       return { ok: false, error: String(e) }

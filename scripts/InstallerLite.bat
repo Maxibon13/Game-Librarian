@@ -39,19 +39,6 @@ set "GIT_TERMINAL_PROMPT=0"
 REM Silence safe.directory warnings when run elevated
 git config --global --add safe.directory "%CD%" >nul 2>nul
 
-REM --- ENSURE PREVIOUS run.bat INSTANCE IS NOT RUNNING ---
-echo [INFO] Checking for any running instance launched by run.bat ...
-set "RUN_BAT=%TARGET_DIR%\run.bat"
-REM Use PowerShell to find and kill processes started by run.bat or the dev script
-powershell -NoProfile -ExecutionPolicy Bypass -Command "
-$procs = @();
-$procs += Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -match 'run\.bat' };
-$procs += Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -match 'npm run dev' };
-foreach ($p in $procs | Sort-Object -Unique -Property ProcessId) {
-    try { & taskkill /PID $($p.ProcessId) /T /F | Out-Null } catch {}
-}
-" 1>nul 2>nul
-
 REM --- CLONE TO TEMP DIRECTORY ---
 set "TMP_BASE=%TEMP%\GameLibrarian_update"
 set "TMP_DIR=%TMP_BASE%_%RANDOM%_%RANDOM%"
@@ -78,12 +65,6 @@ REM --- SUCCESS ---
 :success
 call :cleanup_tmp
 echo [INFO] Repository synchronized to branch: %BRANCH%
-if exist "%TARGET_DIR%\run.bat" (
-  echo [INFO] Launching run.bat ...
-  start "" /D "%TARGET_DIR%" run.bat
-) else (
-  echo [WARN] run.bat not found at "%TARGET_DIR%\run.bat". Skipping launch.
-)
 popd >nul
 endlocal
 exit /b 0
