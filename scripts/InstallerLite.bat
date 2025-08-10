@@ -85,9 +85,4 @@ popd >nul
 endlocal
 exit /b 0
 
-:fail
-echo [ERROR] Installer failed. The repository could not be synchronized.
-echo         You may remove "%TARGET_DIR%\.git" and re-run this script if issues persist.
-popd >nul 2>nul
-endlocal
-exit /b 1
+
