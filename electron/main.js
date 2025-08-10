@@ -7,6 +7,7 @@ import { SettingsService } from '../src/main/services/settings/SettingsService.j
 import { SteamDetector } from '../src/main/services/detection/SteamDetector.js'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
+import { spawn } from 'node:child_process'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -151,7 +152,6 @@ app.whenReady().then(async () => {
       try {
         const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
         const scriptPath = path.join(base, 'scripts', 'updater.bat')
-        const { spawn } = require('node:child_process')
         const p = spawn('cmd.exe', ['/c', scriptPath, 'check'], { stdio: ['ignore','pipe','ignore'] })
         let out = ''
         await new Promise((resolve) => {
@@ -177,13 +177,12 @@ app.whenReady().then(async () => {
       const isDev = !app.isPackaged
       const base = isDev ? process.cwd() : process.resourcesPath
       const scriptPath = path.join(base, 'scripts', 'updater.bat')
-      const { spawn } = require('node:child_process')
       const env = { ...process.env }
       // Ensure desired install root: in dev update in-place, in prod install beside app under "Game Librarian"
       const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
       env.INSTALL_DIR = desired
       return await new Promise((resolve) => {
-        const p = spawn('cmd.exe', ['/c', scriptPath], { stdio: 'inherit', env })
+        const p = spawn('cmd.exe', ['/c', scriptPath], { stdio: ['ignore','inherit','inherit'], env })
         p.on('error', () => resolve({ ok: false }))
         p.on('close', (code) => resolve({ ok: code === 0, code }))
       })
@@ -196,7 +195,6 @@ app.whenReady().then(async () => {
       const isDev = !app.isPackaged
       const base = isDev ? process.cwd() : process.resourcesPath
       const scriptPath = path.join(base, 'scripts', 'updater.bat')
-      const { spawn } = require('node:child_process')
       const env = { ...process.env }
       const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
       env.INSTALL_DIR = desired
@@ -222,6 +220,33 @@ app.whenReady().then(async () => {
           resolve({ ok: code === 0, code })
         })
       })
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+  ipcMain.handle('updater:installAndExit', async () => {
+    try {
+      const isDev = !app.isPackaged
+      const base = isDev ? process.cwd() : process.resourcesPath
+      const scriptDir = path.join(base, 'scripts')
+      const installer = path.join(scriptDir, 'InstallerLite.bat')
+      const env = { ...process.env }
+      const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
+      env.INSTALL_DIR = desired
+      // Verify installer exists
+      try { if (!fsSync.existsSync(installer)) throw new Error('Installer not found at ' + installer) } catch (e) { return { ok: false, error: String(e) } }
+      // Launch installer in a new window and detach so it continues after app quits
+      const child = spawn('cmd.exe', ['/c', 'start', '""', 'InstallerLite.bat'], {
+        cwd: scriptDir,
+        env,
+        detached: true,
+        windowsHide: false,
+        stdio: 'ignore'
+      })
+      child.unref()
+      // Give the process a tick to start, then exit the app
+      setTimeout(() => { try { app.quit() } catch {} }, 150)
+      return { ok: true }
     } catch (e) {
       return { ok: false, error: String(e) }
     }

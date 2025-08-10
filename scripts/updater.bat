@@ -56,7 +56,7 @@ if "%UPDATE_AVAILABLE%"=="1" (
   pushd "%SCRIPT_DIR%" >nul
   REM Pass INSTALL_DIR to InstallerLite so it installs into desired root
   set "INSTALL_DIR=%INSTALL_DIR%"
-  call "%SCRIPT_DIR%InstallerLite.bat"
+  call cmd /c "%SCRIPT_DIR%InstallerLite.bat"
   set "ERR=%ERRORLEVEL%"
   popd >nul
   if not "%ERR%"=="0" (
