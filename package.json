@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -s first \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "vite": "vite",
     "start": "electron .",
     "build": "vite build",
     "build:ui": "vite build",

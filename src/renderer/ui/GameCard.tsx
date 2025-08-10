@@ -7,17 +7,20 @@ type Props = {
   onLaunch: () => void
   variant?: 'large' | 'small' | 'list'
   onOpen?: () => void
+  audioEnabled?: boolean
+  masterVolume?: number
 }
 
-export function GameCard({ game, onLaunch, onOpen, variant = 'large' }: Props) {
+export function GameCard({ game, onLaunch, onOpen, variant = 'large', audioEnabled = true, masterVolume = 1 }: Props) {
   const [hover, setHover] = useState(false)
   const [audioPlayed, setAudioPlayed] = useState(false)
 
   const handleMouseEnter = () => {
     setHover(true)
-    if (!audioPlayed) {
+    if (!audioPlayed && audioEnabled) {
       const audio = new Audio(hoverSound)
-      audio.volume = 0.6
+      const vol = Math.max(0, Math.min(1, masterVolume))
+      audio.volume = 0.6 * vol
       audio.play().catch(() => {})
       setAudioPlayed(true)
     }

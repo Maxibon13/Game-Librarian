@@ -16,6 +16,15 @@ export class SettingsService {
       ui: {
         viewMode: 'large', // 'large' | 'small' | 'list'
         sort: 'az' // 'az' | 'za'
+      },
+      // Audio preferences
+      audio: {
+        enabled: true,
+        masterVolume: 1.0
+      },
+      // Dev/debug options
+      dev: {
+        autoStartVite: false
       }
     }
   }

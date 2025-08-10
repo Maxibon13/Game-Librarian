@@ -4,7 +4,6 @@ import { SessionOverlay } from './SessionOverlay'
 const launchSound = new URL('../../sounds/Launch.ogg', import.meta.url).href
 const openSound = new URL('../../sounds/Open.ogg', import.meta.url).href
 const closeSound = new URL('../../sounds/Close.ogg', import.meta.url).href
-const uiButtonHoverSound = new URL('../../sounds/UiButton.ogg', import.meta.url).href
 import { Settings } from './Settings'
 import { SessionEndedCard } from './SessionEndedCard'
 import GameMenuOverlay from './GameMenuOverlay'
@@ -31,6 +30,8 @@ export function App() {
   const [sortOrder, setSortOrder] = useState<'az' | 'za'>('az')
   const [query, setQuery] = useState('')
   const [modeAnim, setModeAnim] = useState(false)
+  const [audioEnabled, setAudioEnabled] = useState(true)
+  const [masterVolume, setMasterVolume] = useState(1)
 
   useEffect(() => {
     const api = (window as any).electronAPI
@@ -61,7 +62,7 @@ export function App() {
       })
     }
 
-    // Load UI preferences
+    // Load UI/audio preferences
     if (api?.getSettings) {
       api.getSettings().then((s: any) => {
         const ui = s?.ui || {}
@@ -71,30 +72,15 @@ export function App() {
         if (ui.sort === 'az' || ui.sort === 'za') {
           setSortOrder(ui.sort)
         }
+        const audio = s?.audio || {}
+        setAudioEnabled(audio.enabled !== false)
+        const mv = typeof audio.masterVolume === 'number' ? audio.masterVolume : 1
+        setMasterVolume(Math.max(0, Math.min(1, mv)))
       }).catch(() => {})
     }
   }, [])
 
-  // Global UI button hover sound
-  useEffect(() => {
-    let lastBtn: Element | null = null
-    const onPointerOver = (e: PointerEvent) => {
-      const target = (e.target as Element) || null
-      const btn = target ? target.closest('button') : null
-      if (btn && btn !== lastBtn) {
-        lastBtn = btn
-        try {
-          const audio = new Audio(uiButtonHoverSound)
-          audio.volume = 0.35
-          audio.play().catch(() => {})
-        } catch {}
-      } else if (!btn) {
-        lastBtn = null
-      }
-    }
-    document.addEventListener('pointerover', onPointerOver)
-    return () => document.removeEventListener('pointerover', onPointerOver)
-  }, [])
+  // Removed global UI button hover sound
 
   const sortedGames = React.useMemo(() => {
     const byTitle = (a: Game, b: Game) =>
@@ -198,14 +184,25 @@ export function App() {
                   <GameCard
                     key={`${g.launcher}-${g.id}`}
                     game={g}
-                    onLaunch={() => onLaunch(g, setStarting)}
-                    onOpen={() => onOpenMenu(g, setMenu)}
+                    onLaunch={() => onLaunch(g, setStarting, audioEnabled, masterVolume)}
+                    audioEnabled={audioEnabled}
+                    masterVolume={masterVolume}
+                    onOpen={() => onOpenMenu(g, setMenu, audioEnabled, masterVolume)}
                     variant={viewMode}
                   />
                 ))}
               </main>
             ) : (
               <Settings
+                audio={{ enabled: audioEnabled, masterVolume }}
+                onAudioChange={async (next) => {
+                  setAudioEnabled(next.enabled)
+                  setMasterVolume(next.masterVolume)
+                  try {
+                    const current = await (window as any).electronAPI.getSettings()
+                    await (window as any).electronAPI.saveSettings({ ...current, audio: next })
+                  } catch {}
+                }}
                 onSaved={async () => {
                   setLoading(true)
                   try {
@@ -244,37 +241,44 @@ export function App() {
       {menu && (
         <GameMenuOverlay
           game={menu.game}
-          onClose={() => onCloseMenu(setMenu)}
-          onLaunch={() => { onLaunch(menu.game, setStarting); onCloseMenu(setMenu) }}
+          onClose={() => onCloseMenu(setMenu, audioEnabled, masterVolume)}
+          onLaunch={() => { onLaunch(menu.game, setStarting, audioEnabled, masterVolume); onCloseMenu(setMenu, audioEnabled, masterVolume) }}
         />
       )}
     </div>
   )
 }
 
-function onLaunch(game: Game, setStarting: (v: { game: Game }) => void) {
-  const audio = new Audio(launchSound)
-  audio.volume = 0.6
-  audio.preload = 'auto'
-  audio.play().catch(() => {})
+function onLaunch(game: Game, setStarting: (v: { game: Game }) => void, audioEnabled: boolean, masterVolume: number) {
+  if (audioEnabled) {
+    const audio = new Audio(launchSound)
+    audio.volume = 0.6 * Math.max(0, Math.min(1, masterVolume))
+    audio.preload = 'auto'
+    audio.play().catch(() => {})
+  }
   setStarting({ game })
   return (window as any).electronAPI.launchGame(game)
 }
 
-function onOpenMenu(game: Game, setMenu: (v: { game: Game } | null) => void) {
+function onOpenMenu(game: Game, setMenu: (v: { game: Game } | null) => void, audioEnabled: boolean, masterVolume: number) {
   try {
-    const audio = new Audio(openSound)
-    audio.volume = 0.6
-    audio.play().catch(() => {})
+    if (audioEnabled) {
+      const audio = new Audio(openSound)
+      audio.volume = 0.6 * Math.max(0, Math.min(1, masterVolume))
+      audio.play().catch(() => {})
+    }
   } catch {}
   setMenu({ game })
 }
 
-function onCloseMenu(setMenu: (v: { game: Game } | null) => void) {
+function onCloseMenu(setMenu: (v: { game: Game } | null) => void, audioEnabled?: boolean, masterVolume?: number) {
   try {
-    const audio = new Audio(closeSound)
-    audio.volume = 0.6
-    audio.play().catch(() => {})
+    if (audioEnabled) {
+      const audio = new Audio(closeSound)
+      const mv = Math.max(0, Math.min(1, masterVolume ?? 1))
+      audio.volume = 0.6 * mv
+      audio.play().catch(() => {})
+    }
   } catch {}
   setMenu(null)
 }

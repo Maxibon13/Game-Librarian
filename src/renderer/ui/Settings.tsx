@@ -1,17 +1,25 @@
 import React, { useEffect, useState } from 'react'
 
-type Props = { onSaved?: () => void }
+type Props = {
+  onSaved?: () => void
+  audio?: { enabled: boolean; masterVolume: number }
+  onAudioChange?: (next: { enabled: boolean; masterVolume: number }) => void
+}
 
 type SettingsData = {
   steam: { steamPath: string; customLibraries: string[] }
   epic: { manifestDir: string }
+  dev?: { autoStartVite?: boolean }
 }
 
-export function Settings({ onSaved }: Props) {
+export function Settings({ onSaved, audio, onAudioChange }: Props) {
   const [settings, setSettings] = useState<SettingsData>({
     steam: { steamPath: '', customLibraries: [] },
-    epic: { manifestDir: '' }
+    epic: { manifestDir: '' },
+    dev: { autoStartVite: false }
   })
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(audio?.enabled ?? true)
+  const [masterVolume, setMasterVolume] = useState<number>(audio?.masterVolume ?? 1)
 
   useEffect(() => {
     window.electronAPI.getSettings().then(setSettings)
@@ -21,6 +29,7 @@ export function Settings({ onSaved }: Props) {
 
   async function save() {
     await window.electronAPI.saveSettings(settings)
+    if (onAudioChange) onAudioChange({ enabled: audioEnabled, masterVolume })
     onSaved?.()
   }
 
@@ -51,6 +60,35 @@ export function Settings({ onSaved }: Props) {
 
   return (
     <div className="settings">
+      <section>
+        <h2>Audio</h2>
+        <div className="toggle-row">
+          <div className="toggle-label">Enable sounds</div>
+          <button
+            type="button"
+            className={`switch ${audioEnabled ? 'on' : ''}`}
+            role="switch"
+            aria-checked={audioEnabled}
+            onClick={() => setAudioEnabled((v) => !v)}
+          >
+            <span className="knob" />
+          </button>
+        </div>
+        <label>
+          Master volume: {Math.round(masterVolume * 100)}%
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={masterVolume}
+            onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
+          />
+        </label>
+        <div style={{ marginTop: 8 }}>
+          <button className="btn" onClick={() => onAudioChange?.({ enabled: audioEnabled, masterVolume })}>Apply</button>
+        </div>
+      </section>
       <section>
         <h2>Steam</h2>
         <label>
@@ -98,6 +136,25 @@ export function Settings({ onSaved }: Props) {
             onChange={(e) => update((s) => ({ ...s, epic: { ...s.epic, manifestDir: e.target.value } }))}
           />
         </label>
+      </section>
+
+      <section>
+        <h2>Developer</h2>
+        <div className="toggle-row">
+          <div className="toggle-label">Start Vite dev server (no console)</div>
+          <button
+            type="button"
+            className={`switch ${settings.dev?.autoStartVite ? 'on' : ''}`}
+            role="switch"
+            aria-checked={!!settings.dev?.autoStartVite}
+            onClick={() => update((s) => ({ ...s, dev: { ...(s.dev || {}), autoStartVite: !s.dev?.autoStartVite } }))}
+          >
+            <span className="knob" />
+          </button>
+        </div>
+        <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+          If enabled in development, the app will spawn the Vite server hidden and attach without opening a separate console window.
+        </div>
       </section>
 
       <div className="actions">
