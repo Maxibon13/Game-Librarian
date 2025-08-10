@@ -65,9 +65,16 @@ REM --- SUCCESS ---
 :success
 call :cleanup_tmp
 echo [INFO] Repository synchronized to branch: %BRANCH%
+REM Launch run.bat to restart the app, then close this installer window
+if exist "%TARGET_DIR%\run.bat" (
+  echo [INFO] Launching run.bat ...
+  start "" /D "%TARGET_DIR%" run.bat
+) else (
+  echo [WARN] run.bat not found at "%TARGET_DIR%\run.bat". Skipping launch.
+)
 popd >nul
 endlocal
-exit /b 0
+exit
 
 :fail
 echo [ERROR] Installer failed. The repository could not be synchronized.
