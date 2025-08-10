@@ -17,24 +17,58 @@ const detectionService = new GameDetectionService()
 let playtimeService = null
 let settingsService = null
 let backendInitialized = false
+let lastVersionJsonPath = null
 
 const APP_NAME = 'Game Librarian'
 const APP_REPOSITORY = 'https://github.com/Maxibon13/Game-Librarian'
 // Resolve Version.Json depending on dev vs packaged
-function resolveVersionJsonPath() {
+function getVersionJsonCandidatePaths() {
+  const candidates = []
   // __dirname is .../electron in both dev and packaged (inside asar)
-  // Version.Json is placed at app root alongside electron/
-  return path.join(__dirname, '../Version.Json')
+  candidates.push(path.join(__dirname, '../Version.Json'))
+  // Current working dir (useful in dev shells)
+  candidates.push(path.join(process.cwd(), 'Version.Json'))
+  // Packaged resources path (defensive; usually the __dirname path above works)
+  try {
+    const resBase = process.resourcesPath
+    if (resBase) {
+      // If running unpacked asar, the asar virtual path still resolves via normal joins
+      candidates.push(path.join(resBase, 'app.asar', 'Version.Json'))
+      candidates.push(path.join(resBase, 'Version.Json'))
+    }
+  } catch {}
+  return candidates
+}
+
+async function getLocalVersionDetailed() {
+  const candidates = getVersionJsonCandidatePaths()
+  try { console.log('[Version] Candidates:', candidates) } catch {}
+  for (const p of candidates) {
+    try {
+      if (p && fsSync.existsSync(p)) {
+        const raw = await fs.readFile(p, 'utf8')
+        const data = JSON.parse(raw)
+        const v = data?.version
+        if (v) {
+          lastVersionJsonPath = p
+          try { console.log('[Version] Using Version.Json at', p, 'version', v) } catch {}
+          return { version: String(v), path: p, method: 'file' }
+        }
+      }
+    } catch (e) {
+      try { console.warn('[Version] Failed reading candidate', p, String(e)) } catch {}
+    }
+  }
+  let fallback = '0.0.0'
+  try { fallback = String(app.getVersion ? app.getVersion() : '0.0.0') } catch {}
+  lastVersionJsonPath = null
+  try { console.log('[Version] Falling back to app.getVersion()', fallback) } catch {}
+  return { version: fallback, path: null, method: 'app.getVersion' }
 }
 
 async function getLocalVersion() {
-  try {
-    const raw = await fs.readFile(resolveVersionJsonPath(), 'utf8')
-    const data = JSON.parse(raw)
-    return String(data?.version || '0.0.0')
-  } catch {
-    return '0.0.0'
-  }
+  const det = await getLocalVersionDetailed()
+  return det.version
 }
 
 function parseOwnerRepo(repoUrl) {
@@ -163,6 +197,10 @@ async function createWindow() {
 app.whenReady().then(async () => {
   // Expose updater IPC before backend is initialized
   ipcMain.handle('updater:getConfig', async () => ({ appName: APP_NAME, appRepository: APP_REPOSITORY, appVersion: await getLocalVersion(), canUpdate: true }))
+  ipcMain.handle('version:debug', async () => {
+    const det = await getLocalVersionDetailed()
+    return det
+  })
   ipcMain.handle('updater:check', async () => {
     // Prefer bundled batch updater on Windows; otherwise fallback to JS
     if (process.platform === 'win32') {
@@ -179,7 +217,17 @@ app.whenReady().then(async () => {
         try {
           const parsed = JSON.parse(out || '{}')
           if (parsed && parsed.ok !== undefined) {
-            try { console.log('[Updater] versions', { local: parsed.localVersion, remote: parsed.remoteVersion, updateAvailable: parsed.updateAvailable, source: 'batch' }) } catch {}
+            // Normalize localVersion to our JS-detected value to avoid discrepancies
+            try {
+              const jsLocal = await getLocalVersion()
+              parsed.localVersion = jsLocal
+              // Recompute availability using normalized local and reported remote
+              try {
+                const remote = String(parsed.remoteVersion || '')
+                parsed.updateAvailable = compareSemver(remote, jsLocal) > 0
+              } catch {}
+            } catch {}
+            try { console.log('[Updater] versions', { local: parsed.localVersion, remote: parsed.remoteVersion, updateAvailable: parsed.updateAvailable, source: 'batch+normalized' }) } catch {}
             return parsed
           }
         } catch {}

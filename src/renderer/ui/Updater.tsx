@@ -53,6 +53,16 @@ export function Updater({ onReady }: { onReady: () => void }) {
             {state.repository && (
               <div className="updater-note">Source: <a href={state.repository} target="_blank" rel="noreferrer">repository</a></div>
             )}
+            <div style={{ marginTop: 8, opacity: 0.7, fontSize: 12 }}>
+              <button className="btn" style={{ padding: '4px 8px' }} onClick={async () => {
+                try {
+                  const info = await (window as any).electronAPI.debugVersion()
+                  alert('Version source: ' + (info?.method || 'unknown') + '\nPath: ' + (info?.path || '(none)') + '\nVersion: ' + (info?.version || 'n/a'))
+                } catch (e) {
+                  alert('Failed to get version debug info: ' + (e as any)?.message)
+                }
+              }}>Debug version source</button>
+            </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 14 }}>
               <button className="btn btn-primary" onClick={async () => {
                 try {

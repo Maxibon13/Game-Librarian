@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onSessionEnd: (handler) => ipcRenderer.on('game:session-ended', (_e, payload) => handler(payload)),
   // Updater
   getAppConfig: () => ipcRenderer.invoke('updater:getConfig'),
+  debugVersion: () => ipcRenderer.invoke('version:debug'),
   checkForUpdate: () => ipcRenderer.invoke('updater:check'),
   runUpdater: () => ipcRenderer.invoke('updater:run'),
   installUpdateAndExit: () => ipcRenderer.invoke('updater:installAndExit'),
