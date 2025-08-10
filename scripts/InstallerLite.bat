@@ -39,47 +39,31 @@ set "GIT_TERMINAL_PROMPT=0"
 REM Silence safe.directory warnings when run elevated
 git config --global --add safe.directory "%CD%" >nul 2>nul
 
-REM --- IF NOT A REPO: bootstrap; OTHERWISE: update ---
-git rev-parse --git-dir >nul 2>nul
-if errorlevel 1 goto :bootstrap
-goto :update
+REM --- CLONE TO TEMP DIRECTORY ---
+set "TMP_BASE=%TEMP%\GameLibrarian_update"
+set "TMP_DIR=%TMP_BASE%_%RANDOM%_%RANDOM%"
 
-:bootstrap
-echo [INFO] Initializing a new git repository in "%CD%" ...
-git init || goto :fail
-REM Ensure origin is set to the desired URL (set or add)
-git remote set-url origin "%REPO_URL%" 2>nul || git remote add origin "%REPO_URL%" || goto :fail
+echo [INFO] Creating temporary directory: "%TMP_DIR%"
+mkdir "%TMP_DIR%" >nul 2>nul || (
+  echo [ERROR] Failed to create temporary directory.
+  goto :fail
+)
 
-echo [INFO] Fetching branch "%BRANCH%" (shallow) ...
-git fetch --force --tags --prune --depth=1 origin "%BRANCH%" || goto :fail
+echo [INFO] Cloning "%REPO_URL%" (branch: %BRANCH%) into temp ...
+git clone --depth 1 -b "%BRANCH%" --recurse-submodules --shallow-submodules "%REPO_URL%" "%TMP_DIR%" || goto :fail
 
-echo [INFO] Checking out branch "%BRANCH%" from origin ...
-git checkout -B "%BRANCH%" "origin/%BRANCH%" || goto :fail
+REM --- COPY CHANGED EXISTING FILES ONLY (exclude new files) ---
+echo [INFO] Updating existing files from temp clone (excluding new files) ...
+robocopy "%TMP_DIR%" "%TARGET_DIR%" /E /XL /R:1 /W:1 /XD .git node_modules /XF InstallerLite.bat 1>nul
+set "RC=%ERRORLEVEL%"
+if %RC% GEQ 8 (
+  echo [ERROR] File update failed with robocopy exit code %RC%.
+  goto :fail
+)
 
-echo [INFO] Resetting working tree to origin/%BRANCH% ...
-git reset --hard "origin/%BRANCH%" || goto :fail
-git clean -fdx || goto :fail
-goto :submodules
-
-:update
-echo [INFO] Updating existing repository ...
-REM Keep remote origin URL correct
-git remote set-url origin "%REPO_URL%" 2>nul || git remote add origin "%REPO_URL%" || goto :fail
-
-echo [INFO] Fetching latest changes (with prune and tags) ...
-git fetch --force --tags --prune origin || goto :fail
-
-echo [INFO] Ensuring branch "%BRANCH%" tracks origin/%BRANCH% ...
-git checkout -B "%BRANCH%" "origin/%BRANCH%" || goto :fail
-
-echo [INFO] Resetting working tree to origin/%BRANCH% ...
-git reset --hard "origin/%BRANCH%" || goto :fail
-git clean -fdx || goto :fail
-
-:submodules
-REM Update submodules if any (no-op if none)
-git submodule update --init --recursive --depth 1 >nul 2>nul
-
+REM --- SUCCESS ---
+:success
+call :cleanup_tmp
 echo [INFO] Repository synchronized to branch: %BRANCH%
 popd >nul
 endlocal
@@ -87,6 +71,12 @@ exit /b 0
 
 :fail
 echo [ERROR] Installer failed. The repository could not be synchronized.
+call :cleanup_tmp
 popd >nul 2>nul
 endlocal
 exit /b 1
+
+:cleanup_tmp
+echo [INFO] Removing temporary directory ...
+rmdir /s /q "%TMP_DIR%" >nul 2>nul
+exit /b 0
