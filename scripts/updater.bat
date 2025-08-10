@@ -26,15 +26,8 @@ set "PS_GET_VER=(Get-Content -Raw \"%LOCAL_VERSION_JSON%\" | ConvertFrom-Json).v
 for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "%PS_GET_VER%"`) do set "LOCAL_VERSION=%%V"
 if not defined LOCAL_VERSION set "LOCAL_VERSION=0.0.0"
 
-REM Download remote Version.Json to temp
-set "TMP_REMOTE=%TEMP%\gl_remote_version.json"
-del /q "%TMP_REMOTE%" >nul 2>nul
-powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; (Invoke-WebRequest -UseBasicParsing '%RAW_VERSION_URL%').Content | Out-File -Encoding utf8 '%TMP_REMOTE%'" >nul 2>nul
-if exist "%TMP_REMOTE%" (
-  for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "(Get-Content -Raw '%TMP_REMOTE%' | ConvertFrom-Json).version"`) do set "REMOTE_VERSION=%%V"
-) else (
-  set "REMOTE_VERSION=0.0.0"
-)
+REM Fetch remote version (robust PowerShell path). Avoid noisy output in check mode.
+for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; try { [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ($v = (Invoke-WebRequest -UseBasicParsing '%RAW_VERSION_URL%').Content | ConvertFrom-Json).version; if([string]::IsNullOrWhiteSpace($v)){''} else {$v} } catch { '' }"`) do set "REMOTE_VERSION=%%V"
 if not defined REMOTE_VERSION set "REMOTE_VERSION=0.0.0"
 
 REM Compare semver (major.minor.patch) via PowerShell; outputs -1,0,1 when (local vs remote)
@@ -47,7 +40,7 @@ if "%CMP%"=="-1" set "UPDATE_AVAILABLE=1"
 
 REM If called with "check" print JSON and exit
 if /i "%~1"=="check" (
-  echo {"ok":true,"updateAvailable":%UPDATE_AVAILABLE%,"localVersion":"%LOCAL_VERSION%","remoteVersion":"%REMOTE_VERSION%","repository":"%REPO_URL%"}
+  echo {"ok":true,"updateAvailable":%UPDATE_AVAILABLE%,"localVersion":"%LOCAL_VERSION%","remoteVersion":"%REMOTE_VERSION%","repository":"%REPO_URL%","source":"batch"}
   exit /b 0
 )
 

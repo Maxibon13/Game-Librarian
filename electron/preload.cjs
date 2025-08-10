@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppConfig: () => ipcRenderer.invoke('updater:getConfig'),
   checkForUpdate: () => ipcRenderer.invoke('updater:check'),
   runUpdater: () => ipcRenderer.invoke('updater:run'),
+  runUpdaterWithLogs: () => ipcRenderer.invoke('updater:runWithLogs'),
+  onUpdaterLog: (handler) => ipcRenderer.on('updater:log', (_e, line) => handler(line)),
+  onUpdaterDone: (handler) => ipcRenderer.on('updater:done', (_e, payload) => handler(payload)),
   initBackend: () => ipcRenderer.invoke('backend:init')
 })
 

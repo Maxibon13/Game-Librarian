@@ -174,18 +174,53 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('updater:run', async () => {
     try {
-      const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
+      const isDev = !app.isPackaged
+      const base = isDev ? process.cwd() : process.resourcesPath
       const scriptPath = path.join(base, 'scripts', 'updater.bat')
       const { spawn } = require('node:child_process')
       const env = { ...process.env }
-      // Ensure desired install root
-      const parent = path.join(base, '..')
-      const desired = path.join(parent, 'Game Librarian')
+      // Ensure desired install root: in dev update in-place, in prod install beside app under "Game Librarian"
+      const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
       env.INSTALL_DIR = desired
       return await new Promise((resolve) => {
         const p = spawn('cmd.exe', ['/c', scriptPath], { stdio: 'inherit', env })
         p.on('error', () => resolve({ ok: false }))
         p.on('close', (code) => resolve({ ok: code === 0, code }))
+      })
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+  ipcMain.handle('updater:runWithLogs', async () => {
+    try {
+      const isDev = !app.isPackaged
+      const base = isDev ? process.cwd() : process.resourcesPath
+      const scriptPath = path.join(base, 'scripts', 'updater.bat')
+      const { spawn } = require('node:child_process')
+      const env = { ...process.env }
+      const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
+      env.INSTALL_DIR = desired
+      const p = spawn('cmd.exe', ['/c', scriptPath], { env })
+      const forward = (channel, data) => {
+        const text = Buffer.isBuffer(data) ? data.toString() : String(data || '')
+        try {
+          for (const bw of BrowserWindow.getAllWindows()) {
+            bw.webContents.send(channel, text)
+          }
+        } catch {}
+      }
+      p.stdout.on('data', (d) => forward('updater:log', d))
+      p.stderr.on('data', (d) => forward('updater:log', d))
+      return await new Promise((resolve) => {
+        p.on('error', (e) => {
+          forward('updater:log', String(e))
+          forward('updater:done', JSON.stringify({ ok: false, code: -1 }))
+          resolve({ ok: false })
+        })
+        p.on('close', (code) => {
+          forward('updater:done', JSON.stringify({ ok: code === 0, code }))
+          resolve({ ok: code === 0, code })
+        })
       })
     } catch (e) {
       return { ok: false, error: String(e) }

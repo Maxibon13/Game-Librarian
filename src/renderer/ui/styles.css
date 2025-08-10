@@ -148,3 +148,9 @@ body { margin:0; font-family: Inter, system-ui, Arial, sans-serif; background:ra
 .updater-note { margin-top: 8px; opacity: 0.85; font-size: 13px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Updater installing view */
+.progress-bar { position: relative; width: 100%; height: 8px; background: rgba(255,255,255,.12); border-radius: 999px; overflow: hidden; margin: 12px 0 8px; }
+.progress-fill { position:absolute; inset:0; width:0%; background: linear-gradient(90deg, #5865f2, #7a88ff); border-radius:999px; transition: width .25s ease; }
+.updater-console { text-align:left; margin-top: 10px; height: 180px; overflow:auto; background: #0f141b; border:1px solid #222733; border-radius:10px; padding:10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.4; color:#c9d1d9; }
+.updater-console .console-line { white-space: pre-wrap; word-break: break-word; opacity:.92 }
+
