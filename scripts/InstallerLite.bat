@@ -65,6 +65,12 @@ REM --- SUCCESS ---
 :success
 call :cleanup_tmp
 echo [INFO] Repository synchronized to branch: %BRANCH%
+if exist "%TARGET_DIR%\run.bat" (
+  echo [INFO] Launching run.bat ...
+  start "" /D "%TARGET_DIR%" run.bat
+) else (
+  echo [WARN] run.bat not found at "%TARGET_DIR%\run.bat". Skipping launch.
+)
 popd >nul
 endlocal
 exit /b 0
