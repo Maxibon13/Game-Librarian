@@ -27,7 +27,7 @@ export function App() {
   const [ended, setEnded] = useState<{ game: Game; durationMs: number } | null>(null)
   const [menu, setMenu] = useState<{ game: Game } | null>(null)
   const [viewMode, setViewMode] = useState<'large' | 'small' | 'list'>('large')
-  const [sortOrder, setSortOrder] = useState<'az' | 'za'>('az')
+  const [sortOrder, setSortOrder] = useState<'az' | 'za' | 'playtime-desc' | 'playtime-asc'>('az')
   const [query, setQuery] = useState('')
   const [modeAnim, setModeAnim] = useState(false)
   const [audioEnabled, setAudioEnabled] = useState(true)
@@ -70,7 +70,7 @@ export function App() {
         if (ui.viewMode === 'large' || ui.viewMode === 'small' || ui.viewMode === 'list') {
           setViewMode(ui.viewMode)
         }
-        if (ui.sort === 'az' || ui.sort === 'za') {
+        if (ui.sort === 'az' || ui.sort === 'za' || ui.sort === 'playtime-desc' || ui.sort === 'playtime-asc') {
           setSortOrder(ui.sort)
         }
         const audio = s?.audio || {}
@@ -94,11 +94,26 @@ export function App() {
   const sortedGames = React.useMemo(() => {
     const byTitle = (a: Game, b: Game) =>
       (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
+    const byPlaytimeDesc = (a: Game, b: Game) => {
+      const ap = Math.max(0, a.playtimeMinutes ?? 0)
+      const bp = Math.max(0, b.playtimeMinutes ?? 0)
+      if (bp !== ap) return bp - ap
+      return byTitle(a, b)
+    }
+    const byPlaytimeAsc = (a: Game, b: Game) => {
+      const ap = Math.max(0, a.playtimeMinutes ?? 0)
+      const bp = Math.max(0, b.playtimeMinutes ?? 0)
+      if (ap !== bp) return ap - bp
+      return byTitle(a, b)
+    }
     const filtered = query.trim().length > 0
       ? games.filter((g) => (g.title || '').toLowerCase().includes(query.trim().toLowerCase()))
       : games
-    const list = filtered.slice().sort(byTitle)
-    return sortOrder === 'az' ? list : list.reverse()
+    const list = filtered.slice()
+    if (sortOrder === 'playtime-desc') return list.sort(byPlaytimeDesc)
+    if (sortOrder === 'playtime-asc') return list.sort(byPlaytimeAsc)
+    const titled = list.sort(byTitle)
+    return sortOrder === 'az' ? titled : titled.reverse()
   }, [games, sortOrder, query])
 
   async function changeView(next: 'large' | 'small' | 'list') {
@@ -111,7 +126,7 @@ export function App() {
     } catch {}
   }
 
-  async function changeSort(next: 'az' | 'za') {
+  async function changeSort(next: 'az' | 'za' | 'playtime-desc' | 'playtime-asc') {
     setSortOrder(next)
     try {
       const current = await (window as any).electronAPI.getSettings()
@@ -164,11 +179,13 @@ export function App() {
                   <select
                     className="sort-select"
                     value={sortOrder}
-                    onChange={(e) => changeSort(e.target.value as 'az' | 'za')}
+                    onChange={(e) => changeSort(e.target.value as 'az' | 'za' | 'playtime-desc' | 'playtime-asc')}
                     title="Sort order"
                   >
                     <option value="az">A → Z</option>
                     <option value="za">Z → A</option>
+                    <option value="playtime-desc">Most played</option>
+                    <option value="playtime-asc">Least played</option>
                   </select>
                 </div>
               </div>
