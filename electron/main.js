@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { GameDetectionService } from '../src/main/services/detection/GameDetectionService.js'
 import { PlaytimeService } from '../src/main/services/tracking/PlaytimeService.js'
 import { SettingsService } from '../src/main/services/settings/SettingsService.js'
@@ -24,17 +24,15 @@ const APP_REPOSITORY = 'https://github.com/Maxibon13/Game-Librarian'
 // Resolve Version.Json depending on dev vs packaged
 function getVersionJsonCandidatePaths() {
   const candidates = []
-  // __dirname is .../electron in both dev and packaged (inside asar)
-  candidates.push(path.join(__dirname, '../Version.Json'))
+  // Prefer scripts/Version.Json in both dev and prod
+  candidates.push(path.join(__dirname, '../scripts/Version.Json'))
   // Current working dir (useful in dev shells)
-  candidates.push(path.join(process.cwd(), 'Version.Json'))
-  // Packaged resources path (defensive; usually the __dirname path above works)
+  candidates.push(path.join(process.cwd(), 'scripts', 'Version.Json'))
+  // Packaged resources path
   try {
     const resBase = process.resourcesPath
     if (resBase) {
-      // If running unpacked asar, the asar virtual path still resolves via normal joins
-      candidates.push(path.join(resBase, 'app.asar', 'Version.Json'))
-      candidates.push(path.join(resBase, 'Version.Json'))
+      candidates.push(path.join(resBase, 'scripts', 'Version.Json'))
     }
   } catch {}
   return candidates
@@ -138,8 +136,10 @@ async function checkForUpdate() {
 
 async function registerIpcAndServices() {
   if (backendInitialized) return
-  playtimeService = new PlaytimeService(app.getPath('userData'))
-  settingsService = new SettingsService(app.getPath('userData'))
+  // Store all app data in a single JSON under the app root directory as requested
+  const rootDir = app.isPackaged ? path.join(process.resourcesPath, 'scripts') : path.join(process.cwd(), 'scripts')
+  playtimeService = new PlaytimeService(rootDir)
+  settingsService = new SettingsService(rootDir)
   await settingsService.load()
 
   ipcMain.handle('games:list', async () => {
@@ -226,7 +226,13 @@ async function createWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     // In production we ship the built UI under app.asar/dist
-    await mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+    try {
+      const p = path.join(__dirname, '../dist/index.html')
+      const url = pathToFileURL(p).toString()
+      await mainWindow.loadURL(url)
+    } catch (e) {
+      try { console.error('Failed to load index.html from dist:', e) } catch {}
+    }
   }
 }
 

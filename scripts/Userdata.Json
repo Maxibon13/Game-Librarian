@@ -1,0 +1,21 @@
+{
+  "steam": {
+    "steamPath": "",
+    "customLibraries": []
+  },
+  "epic": {
+    "manifestDir": ""
+  },
+  "ui": {
+    "viewMode": "large",
+    "sort": "az"
+  },
+  "audio": {
+    "enabled": true,
+    "masterVolume": 1
+  },
+  "dev": {
+    "autoStartVite": true
+  },
+  "customTitles": {}
+}

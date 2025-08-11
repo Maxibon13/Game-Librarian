@@ -14,7 +14,7 @@ REM Resolve important paths
 set "SCRIPT_DIR=%~dp0"
 set "ROOT_DIR=%SCRIPT_DIR%.."
 for %%I in ("%ROOT_DIR%.") do set "ROOT_DIR_NORM=%%~fI"
-set "LOCAL_VERSION_JSON=%ROOT_DIR_NORM%\Version.Json"
+set "LOCAL_VERSION_JSON=%SCRIPT_DIR%Version.Json"
 
 REM Determine desired install root name: "Game Librarian" beside existing root by default
 for %%I in ("%ROOT_DIR_NORM%") do set "CURRENT_ROOT_NAME=%%~nI"

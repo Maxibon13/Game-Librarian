@@ -11,7 +11,7 @@ export class PlaytimeService {
   data = { sessions: {} }
 
   constructor(userDataDir) {
-    this.storePath = path.join(userDataDir || process.cwd(), 'playtime.json')
+    this.storePath = path.join(userDataDir || process.cwd(), 'Userdata.Json')
     void this.load()
   }
 
@@ -96,7 +96,9 @@ export class PlaytimeService {
   async load() {
     try {
       const raw = await fs.readFile(this.storePath, 'utf8')
-      this.data = JSON.parse(raw)
+      const parsed = JSON.parse(raw)
+      // Preserve only sessions portion but keep reference to full object for merge-on-save
+      this.data = { ...(parsed || {}), sessions: { ...(parsed?.sessions || {}) } }
       // Backward compatibility: migrate minutes -> seconds
       if (this.data && this.data.sessions && typeof this.data.sessions === 'object') {
         for (const k of Object.keys(this.data.sessions)) {
@@ -114,7 +116,14 @@ export class PlaytimeService {
 
   async save() {
     try {
-      await fs.writeFile(this.storePath, JSON.stringify(this.data, null, 2), 'utf8')
+      // Merge sessions into existing json to avoid clobbering settings
+      let existing = {}
+      try {
+        const raw = await fs.readFile(this.storePath, 'utf8')
+        existing = JSON.parse(raw) || {}
+      } catch {}
+      const next = { ...existing, sessions: { ...(existing.sessions || {}), ...(this.data.sessions || {}) } }
+      await fs.writeFile(this.storePath, JSON.stringify(next, null, 2), 'utf8')
     } catch { /* ignore */ }
   }
 

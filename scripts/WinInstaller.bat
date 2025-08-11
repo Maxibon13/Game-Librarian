@@ -59,48 +59,19 @@ mkdir "%TMP_DIR%" >nul 2>nul || (
 echo [INFO] Cloning "%REPO_URL%" (branch: %BRANCH%) into temp ...
 git clone --depth 1 -b "%BRANCH%" --recurse-submodules --shallow-submodules "%REPO_URL%" "%TMP_DIR%" || goto :fail
 
-REM --- STEP 3: COMPILE IN TEMP (after npm check) ---
-echo [INFO] Ensuring Node.js is available ...
+REM --- STEP 3: RAW MODE (no compile). Optionally ensure Node exists ---
+echo [INFO] Raw install mode: skipping build/packaging.
 where node >nul 2>nul || (
-  echo [ERROR] Node.js is required but was not found in PATH.
-  echo         Please install Node.js: https://nodejs.org/
-  goto :fail
+  echo [WARN] Node.js not found in PATH. The app may need Node to run in raw mode.
 )
 
-pushd "%TMP_DIR%" >nul || goto :fail
-echo [INFO] Installing dependencies in temp clone ...
-call npm ci || call npm install || goto :fail
-
-echo [INFO] Building UI with Vite in temp clone ...
-call npm run dist:dir || goto :fail
-popd >nul
-
-REM --- STEP 4: COPY BUILT OUTPUT AND RELEVANT FILES TO ROOT (changed files only) ---
+REM --- STEP 4: COPY RAW SOURCE TO ROOT (changed files only) ---
 if exist "%TARGET_DIR%" (
-  echo [INFO] Updating existing root with built files (changed files only) ...
-  rem Copy dist
-  if exist "%TMP_DIR%\dist" (
-    robocopy "%TMP_DIR%\dist" "%TARGET_DIR%\dist" /E /R:1 /W:1 1>nul
-  )
-  rem Copy electron main process code
-  if exist "%TMP_DIR%\electron" (
-    robocopy "%TMP_DIR%\electron" "%TARGET_DIR%\electron" /E /R:1 /W:1 1>nul
-  )
-  rem Copy backend services code
-  if exist "%TMP_DIR%\src\main" (
-    robocopy "%TMP_DIR%\src\main" "%TARGET_DIR%\src\main" /E /R:1 /W:1 1>nul
-  )
-  rem Copy scripts
-  if exist "%TMP_DIR%\scripts" (
-    robocopy "%TMP_DIR%\scripts" "%TARGET_DIR%\scripts" /E /R:1 /W:1 1>nul
-  )
-  rem Copy version file
-  if exist "%TMP_DIR%\Version.Json" (
-    copy /Y "%TMP_DIR%\Version.Json" "%TARGET_DIR%\Version.Json" >nul 2>nul
-  )
+  echo [INFO] Updating existing root with raw files (changed files only) ...
+  robocopy "%TMP_DIR%" "%TARGET_DIR%" /E /R:1 /W:1 /XD .git node_modules dist .vite 1>nul
 ) else (
   echo [INFO] Target root does not exist, creating fresh copy ...
-  robocopy "%TMP_DIR%" "%TARGET_DIR%" /E /R:1 /W:1 /XD .git node_modules 1>nul
+  robocopy "%TMP_DIR%" "%TARGET_DIR%" /E /R:1 /W:1 /XD .git node_modules dist .vite 1>nul
 )
 
 REM --- SUCCESS ---

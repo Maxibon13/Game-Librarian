@@ -3,7 +3,7 @@ import path from 'node:path'
 
 export class SettingsService {
   constructor(userDataDir) {
-    this.filePath = path.join(userDataDir, 'settings.json')
+    this.filePath = path.join(userDataDir, 'Userdata.Json')
     this.data = {
       steam: {
         steamPath: '',
