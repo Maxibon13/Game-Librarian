@@ -65,11 +65,22 @@ export class MinecraftDetector {
       try { return fsSync.existsSync(p) } catch { return false }
     })
 
-    if (exe) {
-      return [{ id: 'minecraft-launcher', title: 'Minecraft Launcher', launcher: 'minecraft', executablePath: exe }]
+    // 4) Query Gaming Services (Microsoft Store/Xbox) registry for Minecraft Launcher PFN/AppId
+    const msStore = this.findFromGamingServices()
+
+    if (exe || msStore) {
+      const entry = { id: 'minecraft-launcher', title: 'Minecraft Launcher', launcher: 'minecraft' }
+      if (exe) entry.executablePath = exe
+      if (msStore?.pfn && msStore?.appId) {
+        entry.pfn = msStore.pfn
+        entry.appId = msStore.appId
+        entry.appUri = `shell:AppsFolder\\${msStore.pfn}!${msStore.appId}`
+        if (msStore.productId) entry.productId = msStore.productId
+      }
+      return [entry]
     }
 
-    // 4) If protocol handler exists, add a protocol-based launcher entry so it still shows up and can launch
+    // 5) If protocol handler exists, add a protocol-based launcher entry so it still shows up and can launch
     try {
       const { status } = spawnSync('reg', ['query', 'HKCR\\minecraft\\shell\\open\\command'], { encoding: 'utf8' })
       if (status === 0) {
@@ -78,6 +89,56 @@ export class MinecraftDetector {
     } catch {}
 
     return []
+  }
+
+  findFromGamingServices() {
+    const bases = [
+      'HKLM/Software/Microsoft/GamingServices/Games',
+      'HKLM/Software/Wow6432Node/Microsoft/GamingServices/Games'
+    ]
+    for (const base of bases) {
+      try {
+        const winKey = base.replaceAll('/', '\\')
+        const { stdout } = spawnSync('reg', ['query', winKey, '/s'], { encoding: 'utf8' })
+        if (!stdout) continue
+        const lines = stdout.split(/\r?\n/)
+        let currentKey = null
+        let record = {}
+        const flush = () => {
+          if (!currentKey) return
+          const name = String(record.DisplayName || record.Name || '')
+          if (/minecraft\s*launcher/i.test(name) || /^minecraft$/i.test(name)) {
+            const pfn = record.PackageFamilyName || record.Package || ''
+            const appId = record.AppId || record.ApplicationId || ''
+            const productId = record.ProductId || record.StoreId || ''
+            if (pfn && appId) {
+              return { pfn, appId, productId }
+            }
+          }
+          return null
+        }
+        for (const raw of lines) {
+          const line = raw.trim()
+          if (!line) continue
+          if (line.startsWith('HKEY_')) {
+            const maybe = flush()
+            if (maybe) return maybe
+            currentKey = line
+            record = {}
+            continue
+          }
+          const parts = line.split(/\s{2,}/)
+          if (parts.length >= 3) {
+            const name = parts[0]
+            const data = parts.slice(2).join('  ')
+            record[name] = data
+          }
+        }
+        const last = flush()
+        if (last) return last
+      } catch {}
+    }
+    return null
   }
 }
 

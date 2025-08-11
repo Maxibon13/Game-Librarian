@@ -82,8 +82,8 @@ function parseOwnerRepo(repoUrl) {
 }
 
 function compareNumericVersions(local, remote) {
-  const li = Number.parseInt(String(local ?? '0'), 10)
-  const ri = Number.parseInt(String(remote ?? '0'), 10)
+  const li = Number.parseFloat(String(local ?? '0'))
+  const ri = Number.parseFloat(String(remote ?? '0'))
   if (Number.isNaN(li) || Number.isNaN(ri)) return 0
   return li - ri
 }
@@ -114,13 +114,13 @@ async function checkForUpdate() {
     const res = await fetch(rawUrl)
     if (!res.ok) throw new Error(`http ${res.status}`)
     const remoteJson = await res.json()
-    const remoteVersion = Number.parseInt(String(remoteJson?.version ?? '0'), 10) || 0
-    const cmp = compareNumericVersions(localVersion, remoteVersion)
+    const remoteVersionStr = String(remoteJson?.version ?? '0')
+    const cmp = compareNumericVersions(localVersion, remoteVersionStr)
     return {
       ok: true,
       updateAvailable: cmp < 0,
       localVersion,
-      remoteVersion,
+      remoteVersion: remoteVersionStr,
       repository: cfg.appRepository
     }
   } catch (e) {
@@ -307,8 +307,8 @@ app.whenReady().then(async () => {
               }
               // Recompute availability using numeric policy (remote > local)
               try {
-                const li = Number.parseInt(String(jsLocal ?? '0'), 10) || 0
-                const ri = Number.parseInt(String(remote ?? '0'), 10) || 0
+                const li = Number.parseFloat(String(jsLocal ?? '0')) || 0
+                const ri = Number.parseFloat(String(remote ?? '0')) || 0
                 parsed.updateAvailable = ri > li
               } catch {}
             } catch {}
