@@ -193,15 +193,15 @@ async function createWindow() {
 
   const isDev = !app.isPackaged
   if (isDev) {
-    const cfg = settingsService ? settingsService.get() : { dev: { autoStartVite: false } }
-    const shouldAutoStartVite = !!(cfg && cfg.dev && cfg.dev.autoStartVite)
     const url = 'http://localhost:5173'
-    if (shouldAutoStartVite) {
+    // If Python launcher is managing processes, skip auto-start here
+    const managedByPy = process.env.GL_MANAGED_BY_PY === '1'
+    if (!managedByPy) {
       try {
-        // Spawn Vite hidden without a visible console (Windows hidden via start + /B)
+        // Spawn Vite with console visibility controlled by settings
         const isWin = process.platform === 'win32'
         if (isWin) {
-          // Use cmd to start npm run vite in background without new window
+          // Hidden console for Vite in dev
           spawn('cmd.exe', ['/c', 'start', '/B', 'npm', 'run', 'vite'], {
             cwd: process.cwd(),
             env: { ...process.env },

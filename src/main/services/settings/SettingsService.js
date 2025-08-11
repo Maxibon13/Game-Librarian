@@ -21,10 +21,6 @@ export class SettingsService {
       audio: {
         enabled: true,
         masterVolume: 1.0
-      },
-      // Dev/debug options
-      dev: {
-        autoStartVite: false
       }
     }
   }

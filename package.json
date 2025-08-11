@@ -45,6 +45,7 @@
       "scripts/**",
       "src/sounds/**",
       "package.json",
+      "Icon.png",
       "Version.Json"
     ],
     "extraResources": [

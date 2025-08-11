@@ -101,6 +101,12 @@ class InstallerGUI:
             self._fail('Aborting installation - User is offline')
             return
 
+        # Preflight: ensure a usable Python is available for auxiliary scripts
+        self.status_var.set('Checking Python runtime …')
+        if not self._ensure_python_available((3, 10)):
+            self._fail('Python 3.10+ is required and could not be installed automatically.')
+            return
+
         tmp_base = Path(tempfile.gettempdir()) / 'GameLibrarian_update'
         tmp_base.mkdir(parents=True, exist_ok=True)
         tmp_dir = Path(tempfile.mkdtemp(prefix='GameLibrarian_', dir=str(tmp_base)))
@@ -238,6 +244,48 @@ class InstallerGUI:
             if self._run_and_stream(cmd, cwd=None, env=os.environ.copy()):
                 if npm_path := shutil.which('npm'): return npm_path
         return None
+
+    def _ensure_python_available(self, min_version: tuple[int, int] = (3, 10)) -> bool:
+        try:
+            if sys.version_info >= (min_version[0], min_version[1]):
+                self._emit(f"[INFO] Python runtime OK: {sys.version.split()[0]}")
+                return True
+        except Exception:
+            pass
+
+        # Try external python/py launchers
+        def _check_cmd(cmd: list[str]) -> bool:
+            try:
+                return self._run_and_stream(cmd, cwd=None, env=os.environ.copy())
+            except Exception:
+                return False
+
+        # Prefer py launcher where available
+        if shutil.which('py'):
+            if _check_cmd(['py', f'-{min_version[0]}.{min_version[1]}', '--version']):
+                self._emit('[INFO] Python launcher detected and meets version requirement.')
+                return True
+            if _check_cmd(['py', '--version']):
+                self._emit('[INFO] Python launcher present (version printed above).')
+                return True
+
+        if shutil.which('python') and _check_cmd(['python', '--version']):
+            self._emit('[INFO] python command available (version printed above).')
+            return True
+
+        # Attempt to install Python via winget
+        winget = shutil.which('winget')
+        if winget and sys.platform == 'win32':
+            self._emit('[INFO] Python not found. Attempting installation via winget (Python.Python.3) …')
+            cmd = [winget, 'install', '--id', 'Python.Python.3', '--source', 'winget', '--silent', '--exact', '--accept-package-agreements', '--accept-source-agreements']
+            self._run_and_stream(cmd, cwd=None, env=os.environ.copy())
+            # Re-check
+            if shutil.which('py') and _check_cmd(['py', '--version']):
+                return True
+            if shutil.which('python') and _check_cmd(['python', '--version']):
+                return True
+
+        return False
 
     def _run_and_stream(self, args, cwd=None, env=None) -> bool:
         try:

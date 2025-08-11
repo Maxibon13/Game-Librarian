@@ -9,14 +9,12 @@ type Props = {
 type SettingsData = {
   steam: { steamPath: string; customLibraries: string[] }
   epic: { manifestDir: string }
-  dev?: { autoStartVite?: boolean }
 }
 
 export function Settings({ onSaved, audio, onAudioChange }: Props) {
   const [settings, setSettings] = useState<SettingsData>({
     steam: { steamPath: '', customLibraries: [] },
-    epic: { manifestDir: '' },
-    dev: { autoStartVite: false }
+    epic: { manifestDir: '' }
   })
   const [audioEnabled, setAudioEnabled] = useState<boolean>(audio?.enabled ?? true)
   const [masterVolume, setMasterVolume] = useState<number>(audio?.masterVolume ?? 1)
@@ -140,20 +138,8 @@ export function Settings({ onSaved, audio, onAudioChange }: Props) {
 
       <section>
         <h2>Developer</h2>
-        <div className="toggle-row">
-          <div className="toggle-label">Start Vite dev server (no console)</div>
-          <button
-            type="button"
-            className={`switch ${settings.dev?.autoStartVite ? 'on' : ''}`}
-            role="switch"
-            aria-checked={!!settings.dev?.autoStartVite}
-            onClick={() => update((s) => ({ ...s, dev: { ...(s.dev || {}), autoStartVite: !s.dev?.autoStartVite } }))}
-          >
-            <span className="knob" />
-          </button>
-        </div>
-        <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-          If enabled in development, the app will spawn the Vite server hidden and attach without opening a separate console window.
+        <div style={{ fontSize: 12, opacity: 0.75 }}>
+          Developer utilities are managed automatically in development builds.
         </div>
       </section>
 
