@@ -178,17 +178,8 @@ class InstallerGUI:
             self.output_queue.put('__COMPLETE__')
             return
 
-        if not self._run_and_stream([npm_cmd, 'run', 'dist:win'], cwd=target_dir, env=env):
-            self._cleanup_tmp(tmp_dir)
-            self.success = False
-            self.output_queue.put('__COMPLETE__')
-            return
-
-        packed_dir = target_dir / 'dist' / 'win-unpacked'
-        if (packed_dir / 'Game Librarian.exe').exists():
-            self.output_queue.put(f'[INFO] Packaged app created at: "{packed_dir}"')
-        else:
-            self.output_queue.put('[WARN] Packaged app folder not found (NSIS build may produce an installer exe only).')
+        # Skip packaging per requirements: do NOT run electron-builder (dist:win or dist:dir)
+        self.output_queue.put('[INFO] Skipping packaging step (no electron-builder).')
 
         # Success and cleanup
         self._cleanup_tmp(tmp_dir)
