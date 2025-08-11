@@ -40,15 +40,9 @@ set "GIT_TERMINAL_PROMPT=0"
 REM Silence safe.directory warnings when run elevated
 git config --global --add safe.directory "%CD%" >nul 2>nul
 
-REM --- STEP 1/2: VALIDATE REPO AND CLONE TO TEMP DIRECTORY ---
+REM --- CLONE TO TEMP DIRECTORY ---
 set "TMP_BASE=%TEMP%\GameLibrarian_update"
 set "TMP_DIR=%TMP_BASE%_%RANDOM%_%RANDOM%"
-
-echo [INFO] Checking repository availability ...
-git ls-remote --exit-code "%REPO_URL%" >nul 2>nul || (
-  echo [ERROR] Could not reach repository: %REPO_URL%
-  goto :fail
-)
 
 echo [INFO] Creating temporary directory: "%TMP_DIR%"
 mkdir "%TMP_DIR%" >nul 2>nul || (
@@ -59,20 +53,41 @@ mkdir "%TMP_DIR%" >nul 2>nul || (
 echo [INFO] Cloning "%REPO_URL%" (branch: %BRANCH%) into temp ...
 git clone --depth 1 -b "%BRANCH%" --recurse-submodules --shallow-submodules "%REPO_URL%" "%TMP_DIR%" || goto :fail
 
-REM --- STEP 3: RAW MODE (no compile). Optionally ensure Node exists ---
-echo [INFO] Raw install mode: skipping build/packaging.
-where node >nul 2>nul || (
-  echo [WARN] Node.js not found in PATH. The app may need Node to run in raw mode.
+REM --- COPY FILES ---
+echo [INFO] Syncing files from temp clone (including new files) ...
+robocopy "%TMP_DIR%" "%TARGET_DIR%" /E /R:1 /W:1 /XD .git node_modules 1>nul
+set "RC=%ERRORLEVEL%"
+if %RC% GEQ 8 (
+  echo [ERROR] File update failed with robocopy exit code %RC%.
+  goto :fail
 )
 
-REM --- STEP 4: COPY RAW SOURCE TO ROOT (changed files only) ---
-if exist "%TARGET_DIR%" (
-  echo [INFO] Updating existing root with raw files (changed files only) ...
-  robocopy "%TMP_DIR%" "%TARGET_DIR%" /E /R:1 /W:1 /XD .git node_modules dist .vite 1>nul
-) else (
-  echo [INFO] Target root does not exist, creating fresh copy ...
-  robocopy "%TMP_DIR%" "%TARGET_DIR%" /E /R:1 /W:1 /XD .git node_modules dist .vite 1>nul
+REM --- PREPARE COMPILED INSTALL ---
+echo [INFO] Ensuring Node.js is available and installing dependencies ...
+where node >nul 2>nul || (
+  echo [ERROR] Node.js is required but was not found in PATH.
+  echo         Please install Node.js: https://nodejs.org/
+  goto :fail
 )
+
+pushd "%TARGET_DIR%" >nul || goto :fail
+echo [INFO] Running npm install ...
+call npm ci || call npm install || goto :fail
+
+echo [INFO] Building UI with Vite ...
+call npm run build || goto :fail
+
+echo [INFO] Packaging application (installer build) ...
+call npm run dist:win || goto :fail
+
+REM After packaging, prefer running packaged build if available; otherwise keep source
+set "PACKED_DIR=%TARGET_DIR%\dist\win-unpacked"
+if exist "%PACKED_DIR%\Game Librarian.exe" (
+  echo [INFO] Packaged app created at: "%PACKED_DIR%"
+) else (
+  echo [WARN] Packaged app folder not found (NSIS build may produce an installer exe only).
+)
+popd >nul
 
 REM --- SUCCESS ---
 :success

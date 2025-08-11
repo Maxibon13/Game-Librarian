@@ -3,7 +3,7 @@ import path from 'node:path'
 
 export class SettingsService {
   constructor(userDataDir) {
-    this.filePath = path.join(userDataDir, 'Userdata.Json')
+    this.filePath = path.join(userDataDir, 'settings.json')
     this.data = {
       steam: {
         steamPath: '',
@@ -25,9 +25,7 @@ export class SettingsService {
       // Dev/debug options
       dev: {
         autoStartVite: false
-      },
-      // User overrides like custom game titles
-      customTitles: {}
+      }
     }
   }
 
@@ -47,19 +45,6 @@ export class SettingsService {
   }
 
   get() { return this.data }
-
-  async setCustomTitle(launcher, gameId, title) {
-    const key = `${String(launcher)}:${String(gameId)}`
-    const map = { ...(this.data.customTitles || {}) }
-    if (String(title || '').trim().length === 0) {
-      delete map[key]
-    } else {
-      map[key] = String(title)
-    }
-    this.data.customTitles = map
-    await fs.writeFile(this.filePath, JSON.stringify(this.data, null, 2), 'utf8')
-    return this.data
-  }
 }
 
 

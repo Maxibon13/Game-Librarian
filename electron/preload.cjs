@@ -20,8 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   runUpdaterWithLogs: () => ipcRenderer.invoke('updater:runWithLogs'),
   onUpdaterLog: (handler) => ipcRenderer.on('updater:log', (_e, line) => handler(line)),
   onUpdaterDone: (handler) => ipcRenderer.on('updater:done', (_e, payload) => handler(payload)),
-  initBackend: () => ipcRenderer.invoke('backend:init'),
-  setCustomTitle: (launcher, id, title) => ipcRenderer.invoke('settings:setCustomTitle', launcher, id, title)
+  initBackend: () => ipcRenderer.invoke('backend:init')
 })
 
 

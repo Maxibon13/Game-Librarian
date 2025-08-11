@@ -15,7 +15,7 @@
     "masterVolume": 1
   },
   "dev": {
-    "autoStartVite": true
+    "autoStartVite": false
   },
   "customTitles": {}
 }
