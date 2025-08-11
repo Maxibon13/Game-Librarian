@@ -20,17 +20,6 @@ except Exception:
     from tkinter import ttk
     ScrolledText = tk.Text  # type: ignore
 
-p = subprocess.Popen(
-            args,
-            cwd=str(cwd) if cwd else None,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            universal_newlines=True,
-            bufsize=1,
-            env=env,
-        )
-
 class InstallerGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -59,7 +48,6 @@ class InstallerGUI:
         self.status = ttk.Label(bottom, textvariable=self.status_var)
         self.status.pack(side='left')
 
-        # Indeterminate spinner to show activity
         self.progress = ttk.Progressbar(bottom, mode='indeterminate', length=180)
         self.progress.pack(side='left', padx=(8, 0))
 
@@ -87,17 +75,11 @@ class InstallerGUI:
         t.start()
 
     def run_installer(self):
-        # 1. GUI is initialized in __init__
-        # 2-3. Online check and download latest repo ZIP to temp
         REPO_URL = os.environ.get('REPO_URL', 'https://github.com/Maxibon13/Game-Librarian.git')
         BRANCH = os.environ.get('BRANCH', 'main')
-
         script_dir = Path(__file__).resolve().parent
         target_dir_env = os.environ.get('INSTALL_DIR', '')
-        if target_dir_env:
-            target_dir = Path(target_dir_env).resolve()
-        else:
-            target_dir = (script_dir / '..').resolve()
+        target_dir = Path(target_dir_env).resolve() if target_dir_env else (script_dir / '..').resolve()
 
         try:
             target_dir.mkdir(parents=True, exist_ok=True)
@@ -146,19 +128,16 @@ class InstallerGUI:
                 return
             repo_root = entries[0]
 
-            # 4. Sync files
             self.status_var.set('Syncing files …')
             self.output_queue.put('[INFO] Syncing files to application directory ...')
             self._copy_tree(src=repo_root, dst=target_dir, exclude_dirs={'.git', 'node_modules'})
 
-            # 6. Ensure npm (attempt winget install if missing)
             npm_cmd = self._ensure_npm_available()
             if not npm_cmd:
                 self._cleanup_tmp(tmp_dir)
                 self._fail('npm not available and automatic installation failed. Please install Node.js from https://nodejs.org/')
                 return
 
-            # 7. Install dependencies
             self.status_var.set('Installing dependencies (npm) …')
             env = os.environ.copy()
             if not self._run_and_stream([npm_cmd, 'ci'], cwd=target_dir, env=env):
@@ -167,10 +146,7 @@ class InstallerGUI:
                     self._fail('npm install failed')
                     return
 
-            # 5. Clean up temp
             self._cleanup_tmp(tmp_dir)
-
-            # 8. Finish
             self.success = True
             self.output_queue.put('[INFO] Installer finished successfully.')
             self.output_queue.put('__COMPLETE__')
@@ -178,7 +154,6 @@ class InstallerGUI:
             self._cleanup_tmp(tmp_dir)
             self._fail(f'Unexpected error: {e}')
 
-    # helpers
     def _fail(self, message: str):
         self.success = False
         self.output_queue.put(f'[ERROR] {message}')
@@ -194,7 +169,6 @@ class InstallerGUI:
     def _download_file(self, url: str, dest: Path) -> bool:
         try:
             self.output_queue.put('[CMD] DOWNLOAD ' + url)
-            # Add a User-Agent to avoid occasional 403s and enable better CDN behavior
             req = urllib.request.Request(url, headers={'User-Agent': 'GameLibrarianInstaller/1.0'})
             with urllib.request.urlopen(req, timeout=60) as response:
                 total = int(response.headers.get('Content-Length') or '0')
@@ -203,16 +177,12 @@ class InstallerGUI:
                 with open(dest, 'wb') as f:
                     while True:
                         chunk = response.read(chunk_size)
-                        if not chunk:
-                            break
+                        if not chunk: break
                         f.write(chunk)
                         downloaded += len(chunk)
-                        if self.cancel_requested:
-                            return False
-                        # Emit progress every ~512 KiB or on completion
-                        if total:
-                            if (downloaded % (512 * 1024) < chunk_size) or downloaded == total:
-                                self.output_queue.put(f'[INFO] Downloaded {downloaded // 1024} / {total // 1024} KiB')
+                        if self.cancel_requested: return False
+                        if total and ((downloaded % (512 * 1024) < chunk_size) or downloaded == total):
+                            self.output_queue.put(f'[INFO] Downloaded {downloaded // 1024} / {total // 1024} KiB')
             return True
         except Exception as e:
             self.output_queue.put(f'[ERROR] Download error: {e}')
@@ -220,76 +190,55 @@ class InstallerGUI:
 
     def _owner_repo_from_url(self, url: str) -> str:
         try:
-            path = url.split('github.com/', 1)[1]
-            path = path.replace('.git', '')
+            path = url.split('github.com/', 1)[1].replace('.git', '')
             parts = path.strip('/').split('/')
-            if len(parts) >= 2:
-                return parts[0] + '/' + parts[1]
-        except Exception:
-            pass
+            if len(parts) >= 2: return f'{parts[0]}/{parts[1]}'
+        except Exception: pass
         return 'Maxibon13/Game-Librarian'
 
     def _ensure_npm_available(self) -> str | None:
-        npm_path = shutil.which('npm')
-        if npm_path:
-            return npm_path
-
+        if npm_path := shutil.which('npm'): return npm_path
+        
         node_exe = shutil.which('node')
         if not node_exe:
-            pf = os.environ.get('ProgramFiles')
-            pfx86 = os.environ.get('ProgramFiles(x86)')
-            if pf and Path(pf, 'nodejs', 'node.exe').exists():
-                node_exe = str(Path(pf, 'nodejs', 'node.exe'))
-            elif pfx86 and Path(pfx86, 'nodejs', 'node.exe').exists():
-                node_exe = str(Path(pfx86, 'nodejs', 'node.exe'))
+            for pf_env in ['ProgramFiles', 'ProgramFiles(x86)']:
+                if pf := os.environ.get(pf_env):
+                    if Path(pf, 'nodejs', 'node.exe').exists():
+                        node_exe = str(Path(pf, 'nodejs', 'node.exe'))
+                        break
         if node_exe:
-            candidate = str(Path(node_exe).parent / 'npm.cmd')
-            if Path(candidate).exists():
-                return candidate
+            if (candidate := Path(node_exe).parent / 'npm.cmd').exists():
+                return str(candidate)
 
-        winget = shutil.which('winget')
-        if winget:
+        if winget := shutil.which('winget'):
             self.output_queue.put('[INFO] npm not found. Attempting to install Node.js via winget ...')
-            install_cmd = [winget, 'install', '--id', 'OpenJS.NodeJS.LTS', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements']
-            if self._run_and_stream(install_cmd, cwd=None, env=os.environ.copy()):
-                npm_path = shutil.which('npm')
-                if npm_path:
-                    return npm_path
-
+            cmd = [winget, 'install', '--id', 'OpenJS.NodeJS.LTS', '-s', 'winget', '--silent', '-e', '--accept-package-agreements', '--accept-source-agreements']
+            if self._run_and_stream(cmd, cwd=None, env=os.environ.copy()):
+                if npm_path := shutil.which('npm'): return npm_path
         return None
 
     def _run_and_stream(self, args, cwd=None, env=None) -> bool:
         try:
             self.output_queue.put('[CMD] ' + ' '.join([str(a) for a in args]))
-
             popen_kwargs = {
-                'cwd': str(cwd) if cwd else None,
-                'stdout': subprocess.PIPE,
-                'stderr': subprocess.STDOUT,
-                'stdin': subprocess.DEVNULL,
-                'universal_newlines': True,
-                'bufsize': 1,
-                'env': env,
-                'encoding': 'utf-8', # Explicitly set encoding to avoid potential errors
-                'errors': 'replace'  # Handle potential encoding errors gracefully
+                'cwd': str(cwd) if cwd else None, 'stdout': subprocess.PIPE,
+                'stderr': subprocess.STDOUT, 'stdin': subprocess.DEVNULL,
+                'text': True, 'encoding': 'utf-8', 'errors': 'replace',
+                'bufsize': 1, 'env': env,
             }
-
-            # Hide the console window on Windows
             if sys.platform == "win32":
                 popen_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-        
+            
             p = subprocess.Popen(args, **popen_kwargs)
-
             assert p.stdout is not None
             self.proc = p
             for line in p.stdout:
                 if self.cancel_requested:
-                    try:
-                        p.terminate()
-                    except Exception:
-                        pass
+                    try: p.terminate()
+                    except Exception: pass
                     return False
                 self.output_queue.put(line.rstrip())
+
             code = p.wait()
             self.proc = None
             if code != 0:
@@ -304,29 +253,18 @@ class InstallerGUI:
             return False
 
     def _copy_tree(self, src: Path, dst: Path, exclude_dirs: set[str]):
-        src = src.resolve()
-        dst = dst.resolve()
         for root, dirs, files in os.walk(src):
             rel = Path(root).relative_to(src)
             dirs[:] = [d for d in dirs if d not in exclude_dirs]
             (dst / rel).mkdir(parents=True, exist_ok=True)
             for f in files:
-                s = Path(root) / f
-                d = dst / rel / f
-                parts = set(Path(root).parts)
-                if any(part in exclude_dirs for part in parts):
-                    continue
-                try:
-                    shutil.copy2(s, d)
-                except Exception as e:
-                    self.output_queue.put(f'[WARN] Failed to copy {s} -> {d}: {e}')
+                if any(part in exclude_dirs for part in Path(root).parts): continue
+                try: shutil.copy2(Path(root) / f, dst / rel / f)
+                except Exception as e: self.output_queue.put(f'[WARN] Failed to copy {s} -> {d}: {e}')
 
     def _cleanup_tmp(self, tmp_dir: Path):
         self.output_queue.put('[INFO] Removing temporary directory ...')
-        try:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-        except Exception:
-            pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def drain_output_queue(self):
         try:
@@ -349,45 +287,30 @@ class InstallerGUI:
         try:
             self.progress.stop()
             self.progress.configure(mode='determinate', value=100)
-        except Exception:
-            pass
+        except Exception: pass
 
     def on_cancel(self):
         self.cancel_requested = True
         if self.proc and self.proc.poll() is None:
-            try:
-                self.proc.terminate()
-            except Exception:
-                pass
+            try: self.proc.terminate()
+            except Exception: pass
         self.status_var.set('Cancelling …')
         self.append_line('[INFO] Cancel requested by user.')
-        try:
-            self.progress.stop()
-        except Exception:
-            pass
+        try: self.progress.stop()
+        except Exception: pass
 
     def on_finish(self):
-        try:
-            self.root.destroy()
-        except Exception:
-            pass
-
+        self.root.destroy()
 
 def main():
     root = tk.Tk()
     try:
         style = ttk.Style()
-        if 'vista' in style.theme_names():
-            style.theme_use('vista')
-        elif 'xpnative' in style.theme_names():
-            style.theme_use('xpnative')
-    except Exception:
-        pass
+        if 'vista' in style.theme_names(): style.theme_use('vista')
+        elif 'xpnative' in style.theme_names(): style.theme_use('xpnative')
+    except Exception: pass
     InstallerGUI(root)
     root.mainloop()
 
-
 if __name__ == '__main__':
     main()
-
-
