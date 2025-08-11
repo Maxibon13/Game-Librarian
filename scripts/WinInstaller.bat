@@ -64,21 +64,46 @@ if %RC% GEQ 8 (
 
 REM --- PREPARE COMPILED INSTALL ---
 echo [INFO] Ensuring Node.js is available and installing dependencies ...
-where node >nul 2>nul || (
-  echo [ERROR] Node.js is required but was not found in PATH.
-  echo         Please install Node.js: https://nodejs.org/
+
+set "NODE_EXE="
+for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "$p=(Get-Command node -ErrorAction SilentlyContinue).Source; if($p){$p}else{''}"`) do set "NODE_EXE=%%P"
+
+if not defined NODE_EXE (
+  if exist "%ProgramFiles%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles%\nodejs\node.exe"
+)
+if not defined NODE_EXE (
+  if defined ProgramFiles(x86) if exist "%ProgramFiles(x86)%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles(x86)%\nodejs\node.exe"
+)
+if not defined NODE_EXE (
+  if defined NVM_SYMLINK if exist "%NVM_SYMLINK%\node.exe" set "NODE_EXE=%NVM_SYMLINK%\node.exe"
+)
+
+if not defined NODE_EXE (
+  echo [ERROR] Node.js not found. Please install Node.js: https://nodejs.org/
+  echo        (PATH=%PATH%)
+  goto :fail
+)
+
+for %%D in ("%NODE_EXE%") do set "NODE_DIR=%%~dpD"
+set "NPM_CMD=%NODE_DIR%npm.cmd"
+if not exist "%NPM_CMD%" (
+  where npm >nul 2>nul && for /f "usebackq delims=" %%N in (`where npm`) do set "NPM_CMD=%%N"
+)
+if not exist "%NPM_CMD%" (
+  echo [ERROR] npm not found next to Node or in PATH. Ensure Node installation added npm to PATH.
+  echo        Tried: "%NODE_DIR%npm.cmd"
   goto :fail
 )
 
 pushd "%TARGET_DIR%" >nul || goto :fail
 echo [INFO] Running npm install ...
-call npm ci || call npm install || goto :fail
+call "%NPM_CMD%" ci || call "%NPM_CMD%" install || goto :fail
 
 echo [INFO] Building UI with Vite ...
-call npm run build || goto :fail
+call "%NPM_CMD%" run build || goto :fail
 
 echo [INFO] Packaging application (installer build) ...
-call npm run dist:win || goto :fail
+call "%NPM_CMD%" run dist:win || goto :fail
 
 REM After packaging, prefer running packaged build if available; otherwise keep source
 set "PACKED_DIR=%TARGET_DIR%\dist\win-unpacked"
