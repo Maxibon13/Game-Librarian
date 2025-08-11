@@ -332,6 +332,15 @@ class InstallerGUI:
         self.root.destroy()
 
 def main():
+    # Hide the Windows console so only the GUI is visible
+    if sys.platform == 'win32' and os.environ.get('GL_SHOW_CONSOLE') != '1':
+        try:
+            import ctypes  # standard library
+            hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE = 0
+        except Exception:
+            pass
     root = tk.Tk()
     try:
         style = ttk.Style()
