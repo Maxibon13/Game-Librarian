@@ -1,8 +1,10 @@
 import { SteamDetector } from './SteamDetector.js'
 import { EpicDetector } from './EpicDetector.js'
+import { MinecraftDetector } from './MinecraftDetector.js'
+import { RobloxDetector } from './RobloxDetector.js'
 
 export class GameDetectionService {
-  detectors = [new SteamDetector(), new EpicDetector()]
+  detectors = [new SteamDetector(), new EpicDetector(), new MinecraftDetector(), new RobloxDetector()]
 
   async detectAll(settings) {
     const detectors = this.detectors

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, nativeImage, dialog } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { GameDetectionService } from '../src/main/services/detection/GameDetectionService.js'
@@ -146,6 +146,47 @@ async function registerIpcAndServices() {
 
   ipcMain.handle('open:external', async (_e, url) => {
     await shell.openExternal(url)
+  })
+  ipcMain.handle('os:openPath', async (_e, p) => {
+    try {
+      const input = String(p || '').trim()
+      if (!input) return false
+      const normalized = path.resolve(input)
+      try {
+        const stats = await fs.stat(normalized)
+        if (stats.isDirectory()) {
+          await shell.openPath(normalized)
+          return true
+        }
+        // File: reveal in folder
+        try { shell.showItemInFolder(normalized) } catch {}
+        return true
+      } catch {
+        // If path doesn't exist, try opening parent directory when sensible
+        const parent = path.dirname(normalized)
+        if (parent && parent !== normalized && fsSync.existsSync(parent)) {
+          await shell.openPath(parent)
+          return true
+        }
+        return false
+      }
+    } catch {
+      return false
+    }
+  })
+
+  ipcMain.handle('dialog:pickDirectory', async () => {
+    try {
+      const win = BrowserWindow.getFocusedWindow() || mainWindow
+      const res = await dialog.showOpenDialog(win ?? undefined, {
+        title: 'Select folder',
+        properties: ['openDirectory', 'dontAddToRecent']
+      })
+      if (res.canceled || !res.filePaths?.length) return null
+      return res.filePaths[0]
+    } catch {
+      return null
+    }
   })
 
   ipcMain.handle('settings:get', async () => settingsService.get())

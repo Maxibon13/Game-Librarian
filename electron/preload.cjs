@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resetAllPlaytime: () => ipcRenderer.invoke('playtime:resetAll'),
   debugSteam: () => ipcRenderer.invoke('debug:steam'),
   forceQuit: (game) => ipcRenderer.invoke('game:forceQuit', game),
+  openPath: (p) => ipcRenderer.invoke('os:openPath', p),
+  pickDirectory: () => ipcRenderer.invoke('dialog:pickDirectory'),
   onSessionStart: (handler) => ipcRenderer.on('game:session-started', (_e, payload) => handler(payload)),
   onSessionEnd: (handler) => ipcRenderer.on('game:session-ended', (_e, payload) => handler(payload)),
   // Updater

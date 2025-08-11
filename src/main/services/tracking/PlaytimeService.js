@@ -76,6 +76,24 @@ export class PlaytimeService {
     if (game.launcher === 'epic') {
       return this.protocol(`com.epicgames.launcher://apps/${encodeURIComponent(game.id)}?action=launch&silent=true`)
     }
+    if (game.launcher === 'minecraft') {
+      if (game.executablePath) return { command: game.executablePath, args: [] }
+      // Try protocol as fallback
+      return this.protocol('minecraft:')
+    }
+    if (game.launcher === 'roblox') {
+      if (game.executablePath) return { command: game.executablePath, args: [] }
+      return this.protocol('roblox-player:')
+    }
+    if (game.launcher === 'msstore') {
+      // Prefer shell AppsFolder URI when available (PackageFamilyName!AppId)
+      const uri = (game && (game.appUri || (game.pfn && game.appId ? `shell:AppsFolder\\${game.pfn}!${game.appId}` : null)))
+      if (uri) return this.protocol(uri)
+      // Fallback to Store PDP by product id if present
+      if (game.productId) return this.protocol(`ms-windows-store://pdp/?productid=${encodeURIComponent(game.productId)}`)
+      // Final fallback opens Microsoft Store home
+      return this.protocol('ms-windows-store:')
+    }
     if (game.executablePath) {
       return { command: game.executablePath, args: game.args ?? [] }
     }
@@ -84,8 +102,9 @@ export class PlaytimeService {
 
   protocol(uri) {
     if (os.platform() === 'win32') {
-      // Use cmd /c start "" <uri>
-      return { command: 'cmd', args: ['/c', 'start', '""', uri], shell: false }
+      // Use explorer to open URIs for better reliability with AppsFolder
+      // e.g., explorer.exe shell:AppsFolder\\<PFN>!<AppId>
+      return { command: 'explorer.exe', args: [uri], shell: false }
     }
     if (os.platform() === 'darwin') {
       return { command: 'open', args: [uri] }

@@ -176,29 +176,7 @@ export class SteamDetector {
       } catch (e) { this.lastDebug.errors.push(String(e)) }
     }
 
-    // Fallback: if no manifests found or as supplement, scan common folders for games
-    const installDirsFromManifests = new Set(games.map((g) => (g.installDir || '').toLowerCase()))
-    for (const lib of libraries) {
-      try {
-        const commonRoot = path.join(path.dirname(lib), 'common')
-        const entries = await fs.readdir(commonRoot, { withFileTypes: true })
-        for (const entry of entries) {
-          if (!entry.isDirectory()) continue
-          const folderName = entry.name
-          const folderPath = path.join(commonRoot, folderName)
-          if (installDirsFromManifests.has(folderPath.toLowerCase())) continue
-          // Heuristic: find a likely game executable within 2 levels
-          const exe = await this.findLikelyExecutable(folderPath)
-          games.push({
-            id: `common-${folderName}`,
-            title: folderName,
-            launcher: 'steam',
-            installDir: folderPath,
-            executablePath: exe || undefined
-          })
-        }
-      } catch {}
-    }
+    // Optional: deep heuristic scan can produce duplicates/false-positives; disable to avoid duplicates
     return games
   }
 
