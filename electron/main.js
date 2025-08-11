@@ -338,14 +338,20 @@ app.whenReady().then(async () => {
       const isDev = !app.isPackaged
       const base = isDev ? process.cwd() : process.resourcesPath
       const scriptDir = path.join(base, 'scripts')
-      const pyGui = path.join(scriptDir, 'installer_gui.py')
+      const pyGuiCandidates = [
+        path.join(scriptDir, 'installer_gui.pyw'),
+        path.join(scriptDir, 'installer_gui.py')
+      ]
+      const pyGui = pyGuiCandidates.find((p) => {
+        try { return fsSync.existsSync(p) } catch { return false }
+      })
       const installer = path.join(scriptDir, 'WinInstaller.bat')
       const env = { ...process.env }
       const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
       env.INSTALL_DIR = desired
       // Prefer Python GUI if available; fallback to batch
       let child
-      if (fsSync.existsSync(pyGui)) {
+      if (pyGui) {
         // Try python, then py launcher
         const tryLaunch = (cmd) => spawn(cmd, [pyGui], {
           cwd: scriptDir,
