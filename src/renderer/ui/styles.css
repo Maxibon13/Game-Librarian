@@ -218,6 +218,8 @@ body { margin:0; font-family: Inter, system-ui, Arial, sans-serif; background:ra
 .welcome-title-logo { width: 36px; height: 36px; border-radius: 8px }
 .welcome-title { font-size: 26px; font-weight: 900; margin: 0 }
 .welcome-desc { font-size: 15px; opacity: .92; line-height: 1.6; margin: 0 0 18px 0 }
+.welcome-note { display:flex; align-items:flex-start; gap:8px; margin: 0 auto 16px auto; max-width: 700px; text-align:left; font-size: 14px; opacity: .95; background: rgba(255,196,0,.08); border:1px solid rgba(255,196,0,.25); padding:10px 12px; border-radius:10px }
+.welcome-note .warn-icon { font-size: 18px; line-height: 1 }
 .welcome-actions { display:flex; justify-content:center }
 
 /* Changelog button (bottom-right) */
