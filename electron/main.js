@@ -229,7 +229,6 @@ async function createWindow() {
       } catch {}
     }
     await mainWindow.loadURL(url)
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     // In production we ship the built UI under app.asar/dist
     await mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
