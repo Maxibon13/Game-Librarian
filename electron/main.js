@@ -249,13 +249,23 @@ app.whenReady().then(async () => {
             try {
               const jsLocal = await getLocalVersion()
               parsed.localVersion = jsLocal
-              // Recompute availability using normalized local and reported remote
+              // If batch failed to resolve a proper remote version, fall back to JS fetch
+              let remote = String(parsed.remoteVersion || '')
+              if (!remote || remote === '0.0.0') {
+                try {
+                  const fb = await checkForUpdate()
+                  if (fb && fb.ok !== false && fb.remoteVersion) {
+                    remote = String(fb.remoteVersion)
+                    parsed.remoteVersion = remote
+                  }
+                } catch {}
+              }
+              // Recompute availability using normalized local and final remote
               try {
-                const remote = String(parsed.remoteVersion || '')
                 parsed.updateAvailable = compareSemver(remote, jsLocal) > 0
               } catch {}
             } catch {}
-            try { console.log('[Updater] versions', { local: parsed.localVersion, remote: parsed.remoteVersion, updateAvailable: parsed.updateAvailable, source: 'batch+normalized' }) } catch {}
+            try { console.log('[Updater] versions', { local: parsed.localVersion, remote: parsed.remoteVersion, updateAvailable: parsed.updateAvailable, source: 'batch+normalized(+js-remote-if-missing)' }) } catch {}
             return parsed
           }
         } catch {}

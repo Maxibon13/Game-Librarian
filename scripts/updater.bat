@@ -27,7 +27,7 @@ for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "%PS_GET_VER%"
 if not defined LOCAL_VERSION set "LOCAL_VERSION=0.0.0"
 
 REM Fetch remote version (robust PowerShell path). Avoid noisy output in check mode.
-for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; try { [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ($v = (Invoke-WebRequest -UseBasicParsing '%RAW_VERSION_URL%').Content | ConvertFrom-Json).version; if([string]::IsNullOrWhiteSpace($v)){''} else {$v} } catch { '' }"`) do set "REMOTE_VERSION=%%V"
+for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; try { [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $raw=(Invoke-WebRequest -UseBasicParsing '%RAW_VERSION_URL%').Content; $j = $raw | ConvertFrom-Json; $v=$j.version; if([string]::IsNullOrWhiteSpace($v)){''} else {$v} } catch { '' }"`) do set "REMOTE_VERSION=%%V"
 if not defined REMOTE_VERSION set "REMOTE_VERSION=0.0.0"
 
 REM Compare variable-length semver via PowerShell; -1 if local<remote, 1 if local>remote
