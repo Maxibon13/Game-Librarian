@@ -21,16 +21,16 @@ for %%I in ("%ROOT_DIR_NORM%") do set "CURRENT_ROOT_NAME=%%~nI"
 for %%I in ("%ROOT_DIR_NORM%\..") do set "ROOT_PARENT=%%~fI"
 set "DESIRED_ROOT=%ROOT_PARENT%\Game Librarian"
 
-REM Helper: read JSON version as integer using PowerShell (fallback to 0)
-for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "try { $v = (Get-Content -Raw \"%LOCAL_VERSION_JSON%\" | ConvertFrom-Json).version; [int]$v } catch { 0 }"`) do set "LOCAL_VERSION=%%V"
+REM Helper: read JSON version as decimal using PowerShell (fallback to 0)
+for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "try { $v = (Get-Content -Raw \"%LOCAL_VERSION_JSON%\" | ConvertFrom-Json).version; [double]$v } catch { 0 }"`) do set "LOCAL_VERSION=%%V"
 if not defined LOCAL_VERSION set "LOCAL_VERSION=0"
 
-REM Fetch remote version as integer
-for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; try { [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $raw=(Invoke-WebRequest -UseBasicParsing '%RAW_VERSION_URL%').Content; $j = $raw | ConvertFrom-Json; [int]$j.version } catch { 0 }"`) do set "REMOTE_VERSION=%%V"
+REM Fetch remote version as decimal
+for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; try { [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $raw=(Invoke-WebRequest -UseBasicParsing '%RAW_VERSION_URL%').Content; $j = $raw | ConvertFrom-Json; [double]$j.version } catch { 0 }"`) do set "REMOTE_VERSION=%%V"
 if not defined REMOTE_VERSION set "REMOTE_VERSION=0"
 
-REM Compare numerically using PowerShell; returns 1 if remote>local else 0
-for /f "usebackq delims=" %%U in (`powershell -NoProfile -Command "try { if([int]'%REMOTE_VERSION%' -gt [int]'%LOCAL_VERSION%'){ '1' } else { '0' } } catch { '0' }"`) do set "UPDATE_AVAILABLE=%%U"
+REM Compare numerically as decimals using PowerShell; returns 1 if remote>local else 0
+for /f "usebackq delims=" %%U in (`powershell -NoProfile -Command "try { if([double]'%REMOTE_VERSION%' -gt [double]'%LOCAL_VERSION%'){ '1' } else { '0' } } catch { '0' }"`) do set "UPDATE_AVAILABLE=%%U"
 
 REM If called with "check" print JSON and exit
 if /i "%~1"=="check" (

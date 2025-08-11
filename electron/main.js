@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell, nativeImage, dialog } from 'electron'
+import https from 'node:https'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { GameDetectionService } from '../src/main/services/detection/GameDetectionService.js'
@@ -88,6 +89,60 @@ function compareNumericVersions(local, remote) {
   return li - ri
 }
 
+async function fetchRemoteVersionStrict(rawUrl) {
+  // Try fetch with explicit headers and timeout, then fallback to https module
+  const tryFetch = async () => {
+    try {
+      const ac = new AbortController()
+      const t = setTimeout(() => ac.abort(), 10000)
+      const res = await fetch(rawUrl, {
+        headers: {
+          'User-Agent': 'GameLibrarian-Updater',
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache'
+        },
+        cache: 'no-store',
+        signal: ac.signal
+      })
+      clearTimeout(t)
+      if (!res.ok) throw new Error(String(res.status))
+      const json = await res.json()
+      const v = String(json?.version ?? '').trim()
+      return v || null
+    } catch {
+      return null
+    }
+  }
+  const viaHttps = async () => {
+    return await new Promise((resolve) => {
+      try {
+        const req = https.get(rawUrl, {
+          headers: {
+            'User-Agent': 'GameLibrarian-Updater',
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        }, (res) => {
+          if (res.statusCode !== 200) { try { res.resume() } catch {} ; return resolve(null) }
+          const chunks = []
+          res.on('data', (d) => chunks.push(d))
+          res.on('end', () => {
+            try {
+              const body = Buffer.concat(chunks).toString('utf8')
+              const json = JSON.parse(body)
+              const v = String(json?.version ?? '').trim()
+              resolve(v || null)
+            } catch { resolve(null) }
+          })
+        })
+        req.setTimeout(10000, () => { try { req.destroy(new Error('timeout')) } catch {} })
+        req.on('error', () => resolve(null))
+      } catch { resolve(null) }
+    })
+  }
+  return (await tryFetch()) || (await viaHttps())
+}
+
 // Attempt to stop the Vite dev server to clean up the dev console (Windows only)
 async function stopDevViteIfRunning() {
   try {
@@ -106,26 +161,37 @@ async function stopDevViteIfRunning() {
 }
 
 async function checkForUpdate() {
-  const cfg = { appRepository: APP_REPOSITORY }
-  const localVersion = await getLocalVersion()
-  const { owner, repo } = parseOwnerRepo(cfg.appRepository || 'https://github.com/Maxibon13/Game-Librarian')
-  const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/Version.Json`
+  // Delegate to batch script for all repository access; JS only normalizes values
   try {
-    const res = await fetch(rawUrl)
-    if (!res.ok) throw new Error(`http ${res.status}`)
-    const remoteJson = await res.json()
-    const remoteVersionStr = String(remoteJson?.version ?? '0')
-    const cmp = compareNumericVersions(localVersion, remoteVersionStr)
-    return {
-      ok: true,
-      updateAvailable: cmp < 0,
-      localVersion,
-      remoteVersion: remoteVersionStr,
-      repository: cfg.appRepository
-    }
+    const { spawn } = await import('node:child_process')
+    const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
+    const scriptPath = path.join(base, 'scripts', 'updater.bat')
+    const p = spawn('cmd.exe', ['/c', scriptPath, 'check'], { stdio: ['ignore','pipe','ignore'] })
+    let out = ''
+    await new Promise((resolve) => {
+      p.stdout.on('data', (d) => out += d.toString())
+      p.on('close', () => resolve())
+      p.on('error', () => resolve())
+    })
+    try {
+      const parsed = JSON.parse(out || '{}')
+      if (parsed && parsed.ok !== undefined) {
+        // Ensure decimal compare normalization in JS as a safety net
+        const li = String(parsed.localVersion ?? '0')
+        const ri = String(parsed.remoteVersion ?? '0')
+        parsed.updateAvailable = compareNumericVersions(li, ri) < 0
+        parsed.localVersion = li
+        parsed.remoteVersion = ri
+        parsed.repository = APP_REPOSITORY
+        return parsed
+      }
+    } catch {}
   } catch (e) {
     return { ok: false, error: String(e) }
   }
+  // Hard fallback: attempt direct, though expected path is batch above
+  const li = await getLocalVersion()
+  return { ok: true, updateAvailable: false, localVersion: li, remoteVersion: '0', repository: APP_REPOSITORY }
 }
 
 async function registerIpcAndServices() {
@@ -298,9 +364,11 @@ app.whenReady().then(async () => {
               let remote = String(parsed.remoteVersion || '')
               if (!remote || remote === '0.0.0') {
                 try {
-                  const fb = await checkForUpdate()
-                  if (fb && fb.ok !== false && fb.remoteVersion) {
-                    remote = String(fb.remoteVersion)
+                  const { owner, repo } = parseOwnerRepo(APP_REPOSITORY)
+                  const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/Version.Json`
+                  const fetched = await fetchRemoteVersionStrict(rawUrl)
+                  if (fetched) {
+                    remote = String(fetched)
                     parsed.remoteVersion = remote
                   }
                 } catch {}
