@@ -72,7 +72,7 @@ echo [INFO] Installing dependencies in temp clone ...
 call npm ci || call npm install || goto :fail
 
 echo [INFO] Building UI with Vite in temp clone ...
-call npm run build || goto :fail
+call npm run dist:dir || goto :fail
 popd >nul
 
 REM --- STEP 4: COPY BUILT OUTPUT AND RELEVANT FILES TO ROOT (changed files only) ---

@@ -161,6 +161,14 @@ async function registerIpcAndServices() {
     const saved = await settingsService.save(next)
     return saved
   })
+  ipcMain.handle('settings:setCustomTitle', async (_e, launcher, id, title) => {
+    try {
+      const saved = await settingsService.setCustomTitle(launcher, id, title)
+      return { ok: true, data: saved }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
 
   ipcMain.handle('playtime:resetAll', async () => {
     try { playtimeService.resetAllPlaytime() } catch {}

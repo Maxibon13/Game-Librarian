@@ -20,7 +20,18 @@ export class GameDetectionService {
     for (const g of results) {
       map.set(`${g.launcher}:${g.id}`, g)
     }
-    return Array.from(map.values())
+    const list = Array.from(map.values())
+    // Apply custom titles from settings
+    try {
+      const titles = settings && settings.customTitles ? settings.customTitles : {}
+      if (titles && typeof titles === 'object') {
+        for (const g of list) {
+          const key = `${String(g.launcher)}:${String(g.id)}`
+          if (titles[key]) g.title = String(titles[key])
+        }
+      }
+    } catch {}
+    return list
   }
 }
 
