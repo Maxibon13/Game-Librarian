@@ -60,8 +60,8 @@ async function getLocalVersionDetailed() {
       try { console.warn('[Version] Failed reading candidate', p, String(e)) } catch {}
     }
   }
-  let fallback = '0.0.0'
-  try { fallback = String(app.getVersion ? app.getVersion() : '0.0.0') } catch {}
+  let fallback = 0
+  try { fallback = Number.parseInt(String(app.getVersion ? app.getVersion() : '0'), 10) || 0 } catch {}
   lastVersionJsonPath = null
   try { console.log('[Version] Falling back to app.getVersion()', fallback) } catch {}
   return { version: fallback, path: null, method: 'app.getVersion' }
@@ -81,20 +81,11 @@ function parseOwnerRepo(repoUrl) {
   return { owner: 'Maxibon13', repo: 'Game-Librarian' }
 }
 
-function normalizeVersionString(v) {
-  try { return String(v || '').trim() } catch { return '0' }
-}
-
-function compareSemver(a, b) {
-  const as = normalizeVersionString(a).split('.')
-  const bs = normalizeVersionString(b).split('.')
-  const max = Math.max(as.length, bs.length)
-  for (let i = 0; i < max; i++) {
-    const ai = parseInt(as[i] ?? '0', 10) || 0
-    const bi = parseInt(bs[i] ?? '0', 10) || 0
-    if (ai !== bi) return ai - bi
-  }
-  return 0
+function compareNumericVersions(local, remote) {
+  const li = Number.parseInt(String(local ?? '0'), 10)
+  const ri = Number.parseInt(String(remote ?? '0'), 10)
+  if (Number.isNaN(li) || Number.isNaN(ri)) return 0
+  return li - ri
 }
 
 // Attempt to stop the Vite dev server to clean up the dev console (Windows only)
@@ -123,11 +114,11 @@ async function checkForUpdate() {
     const res = await fetch(rawUrl)
     if (!res.ok) throw new Error(`http ${res.status}`)
     const remoteJson = await res.json()
-    const remoteVersion = remoteJson?.version || '0.0.0'
-    const cmp = compareSemver(remoteVersion, localVersion)
+    const remoteVersion = Number.parseInt(String(remoteJson?.version ?? '0'), 10) || 0
+    const cmp = compareNumericVersions(localVersion, remoteVersion)
     return {
       ok: true,
-      updateAvailable: cmp > 0,
+      updateAvailable: cmp < 0,
       localVersion,
       remoteVersion,
       repository: cfg.appRepository
@@ -273,9 +264,11 @@ app.whenReady().then(async () => {
                   }
                 } catch {}
               }
-              // Recompute availability using normalized local and final remote
+              // Recompute availability using numeric policy (remote > local)
               try {
-                parsed.updateAvailable = compareSemver(remote, jsLocal) > 0
+                const li = Number.parseInt(String(jsLocal ?? '0'), 10) || 0
+                const ri = Number.parseInt(String(remote ?? '0'), 10) || 0
+                parsed.updateAvailable = ri > li
               } catch {}
             } catch {}
             try { console.log('[Updater] versions', { local: parsed.localVersion, remote: parsed.remoteVersion, updateAvailable: parsed.updateAvailable, source: 'batch+normalized(+js-remote-if-missing)' }) } catch {}

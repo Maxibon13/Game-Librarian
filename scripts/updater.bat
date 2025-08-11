@@ -21,32 +21,26 @@ for %%I in ("%ROOT_DIR_NORM%") do set "CURRENT_ROOT_NAME=%%~nI"
 for %%I in ("%ROOT_DIR_NORM%\..") do set "ROOT_PARENT=%%~fI"
 set "DESIRED_ROOT=%ROOT_PARENT%\Game Librarian"
 
-REM Helper: read JSON version field using PowerShell
-set "PS_GET_VER=(Get-Content -Raw \"%LOCAL_VERSION_JSON%\" | ConvertFrom-Json).version"
-for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "%PS_GET_VER%"`) do set "LOCAL_VERSION=%%V"
-if not defined LOCAL_VERSION set "LOCAL_VERSION=0.0.0"
+REM Helper: read JSON version as integer using PowerShell (fallback to 0)
+for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "try { $v = (Get-Content -Raw \"%LOCAL_VERSION_JSON%\" | ConvertFrom-Json).version; [int]$v } catch { 0 }"`) do set "LOCAL_VERSION=%%V"
+if not defined LOCAL_VERSION set "LOCAL_VERSION=0"
 
-REM Fetch remote version (robust PowerShell path). Avoid noisy output in check mode.
-for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; try { [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $raw=(Invoke-WebRequest -UseBasicParsing '%RAW_VERSION_URL%').Content; $j = $raw | ConvertFrom-Json; $v=$j.version; if([string]::IsNullOrWhiteSpace($v)){''} else {$v} } catch { '' }"`) do set "REMOTE_VERSION=%%V"
-if not defined REMOTE_VERSION set "REMOTE_VERSION=0.0.0"
+REM Fetch remote version as integer
+for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; try { [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $raw=(Invoke-WebRequest -UseBasicParsing '%RAW_VERSION_URL%').Content; $j = $raw | ConvertFrom-Json; [int]$j.version } catch { 0 }"`) do set "REMOTE_VERSION=%%V"
+if not defined REMOTE_VERSION set "REMOTE_VERSION=0"
 
-REM Compare variable-length semver via PowerShell; -1 if local<remote, 1 if local>remote
-for /f "usebackq delims=" %%C in (`powershell -NoProfile -Command "function C([string]$l,[string]$r){$ls=$l.Trim().Split('.');$rs=$r.Trim().Split('.');$m=[Math]::Max($ls.Length,$rs.Length);for($i=0;$i -lt $m;$i++){ $li=0; $ri=0; [void][int]::TryParse(($ls[$i]),[ref]$li); [void][int]::TryParse(($rs[$i]),[ref]$ri); if($li -ne $ri){ return [Math]::Sign($li-$ri) } } return 0 }; C '%LOCAL_VERSION%' '%REMOTE_VERSION%'"`) do set "CMP=%%C"
-if not defined CMP set "CMP=0"
-
-set "UPDATE_AVAILABLE=0"
-REM If remote > local then update is available; note our C returns -1 if local<remote
-if "%CMP%"=="-1" set "UPDATE_AVAILABLE=1"
+REM Compare numerically using PowerShell; returns 1 if remote>local else 0
+for /f "usebackq delims=" %%U in (`powershell -NoProfile -Command "try { if([int]'%REMOTE_VERSION%' -gt [int]'%LOCAL_VERSION%'){ '1' } else { '0' } } catch { '0' }"`) do set "UPDATE_AVAILABLE=%%U"
 
 REM If called with "check" print JSON and exit
 if /i "%~1"=="check" (
-  echo {"ok":true,"updateAvailable":%UPDATE_AVAILABLE%,"localVersion":"%LOCAL_VERSION%","remoteVersion":"%REMOTE_VERSION%","repository":"%REPO_URL%","source":"batch"}
+  echo {"ok":true,"updateAvailable":%UPDATE_AVAILABLE%,"localVersion":%LOCAL_VERSION%,"remoteVersion":%REMOTE_VERSION%,"repository":"%REPO_URL%"}
   exit /b 0
 )
 
 REM Otherwise, perform update if available
 if "%UPDATE_AVAILABLE%"=="1" (
-  echo [INFO] Update available: %LOCAL_VERSION% ^> %REMOTE_VERSION%
+  echo [INFO] Update available: %LOCAL_VERSION% ^< %REMOTE_VERSION%
   set "INSTALL_DIR=%DESIRED_ROOT%"
   if not exist "%INSTALL_DIR%" (
     mkdir "%INSTALL_DIR%" >nul 2>nul
