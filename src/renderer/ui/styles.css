@@ -213,13 +213,22 @@ body { margin:0; font-family: Inter, system-ui, Arial, sans-serif; background:ra
 
 /* Welcome screen */
 .welcome-overlay { position: fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index: 2100; backdrop-filter: blur(14px); background: rgba(10,11,14, .45); }
-.welcome-card { width: min(720px, 92vw); padding: 28px; border-radius: 16px; background: linear-gradient(180deg, var(--panel), var(--panel-2)); border:1px solid #262a33; box-shadow: 0 24px 80px rgba(0,0,0,.55); text-align: center; }
+.welcome-card { width: min(1000px, 96vw); min-height: 60vh; max-height: 86vh; overflow:auto; padding: 36px; border-radius: 16px; background: linear-gradient(180deg, var(--panel), var(--panel-2)); border:1px solid #262a33; box-shadow: 0 24px 80px rgba(0,0,0,.55); text-align: center; }
 .welcome-title-wrap { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom: 8px }
 .welcome-title-logo { width: 36px; height: 36px; border-radius: 8px }
 .welcome-title { font-size: 26px; font-weight: 900; margin: 0 }
-.welcome-desc { font-size: 15px; opacity: .92; line-height: 1.6; margin: 0 0 18px 0 }
-.welcome-note { display:flex; align-items:flex-start; gap:8px; margin: 0 auto 16px auto; max-width: 700px; text-align:left; font-size: 14px; opacity: .95; background: rgba(255,196,0,.08); border:1px solid rgba(255,196,0,.25); padding:10px 12px; border-radius:10px }
-.welcome-note .warn-icon { font-size: 18px; line-height: 1 }
+.welcome-desc { font-size: 16px; opacity: .92; line-height: 1.7; margin: 0 0 20px 0 }
+.welcome-note { display:flex; flex-direction:column; gap:12px; margin: 0 auto 22px auto; max-width: 100%; text-align:left; font-size: 16.5px; line-height: 1.7; opacity: .95; background: rgba(255,196,0,.08); border:1px solid rgba(255,196,0,.25); padding:16px 18px; border-radius:12px }
+.welcome-note .note-header { display:flex; align-items:flex-start; gap:10px }
+.welcome-note .warn-icon { font-size: 26px; line-height: 1; margin-top: 2px }
+.welcome-note .note-title { font-weight: 700 }
+.welcome-note .note-sub { opacity: .9 }
+.note-steps { display:flex; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-top: 6px }
+.note-steps .step { min-width: 160px }
+.note-steps .step-title { font-weight: 800; text-transform: uppercase; letter-spacing: .4px }
+.note-steps .step-arrow { font-size: 22px; opacity: .85; padding: 0 4px }
+.note-steps .step-hints { margin: 6px 0 0 16px; font-size: 15px; opacity:.9 }
+.note-steps .step-desc { opacity: .9; margin-top: 6px }
 .welcome-actions { display:flex; justify-content:center }
 
 /* Changelog button (bottom-right) */

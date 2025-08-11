@@ -18,10 +18,33 @@ export function Welcome({ onContinue }: Props) {
           Fast detection, streamlined launching, and playtime tracking — all wrapped in a polished, themeable interface.
         </p>
         <div className="welcome-note" role="note">
-          <span className="warn-icon" aria-hidden>⚠️</span>
-          Some libraries may be installed in non‑default locations. If a game is missing, open <strong>Settings</strong> and review
-          your <strong>Steam</strong>/<strong>Epic Games</strong> library paths. You can also use <strong>Steam Debug</strong>
-          (in Settings) to verify detected folders.
+          <div className="note-header">
+            <span className="warn-icon" aria-hidden>⚠️</span>
+            <div>
+              <div className="note-title">Some libraries may be installed in non‑default locations.</div>
+              <div className="note-sub">If a game is missing, perform these checks:</div>
+            </div>
+          </div>
+          <div className="note-steps">
+            <div className="step">
+              <div className="step-title">Settings</div>
+            </div>
+            <div className="step-arrow">→</div>
+            <div className="step">
+              <div className="step-title">Steam / Epic Paths</div>
+              <ul className="step-hints">
+                <li>Verify that paths are correct</li>
+                <li>Add any extra libraries</li>
+              </ul>
+            </div>
+            <div className="step-arrow">→</div>
+            <div className="step"><div className="step-title">Validate</div></div>
+            <div className="step-arrow">→</div>
+            <div className="step">
+              <div className="step-title">Steam Debug</div>
+              <div className="step-desc">(in Settings) to verify detected folders</div>
+            </div>
+          </div>
         </div>
         <div className="welcome-actions">
           <button className="btn btn-primary" onClick={onContinue}>Continue</button>
