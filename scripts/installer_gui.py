@@ -20,6 +20,16 @@ except Exception:
     from tkinter import ttk
     ScrolledText = tk.Text  # type: ignore
 
+p = subprocess.Popen(
+            args,
+            cwd=str(cwd) if cwd else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            universal_newlines=True,
+            bufsize=1,
+            env=env,
+        )
 
 class InstallerGUI:
     def __init__(self, root: tk.Tk):
@@ -251,16 +261,25 @@ class InstallerGUI:
     def _run_and_stream(self, args, cwd=None, env=None) -> bool:
         try:
             self.output_queue.put('[CMD] ' + ' '.join([str(a) for a in args]))
-            p = subprocess.Popen(
-                args,
-                cwd=str(cwd) if cwd else None,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                universal_newlines=True,
-                bufsize=1,
-                env=env,
-            )
+
+            popen_kwargs = {
+                'cwd': str(cwd) if cwd else None,
+                'stdout': subprocess.PIPE,
+                'stderr': subprocess.STDOUT,
+                'stdin': subprocess.DEVNULL,
+                'universal_newlines': True,
+                'bufsize': 1,
+                'env': env,
+                'encoding': 'utf-8', # Explicitly set encoding to avoid potential errors
+                'errors': 'replace'  # Handle potential encoding errors gracefully
+            }
+
+            # Hide the console window on Windows
+            if sys.platform == "win32":
+                popen_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+        
+            p = subprocess.Popen(args, **popen_kwargs)
+
             assert p.stdout is not None
             self.proc = p
             for line in p.stdout:
