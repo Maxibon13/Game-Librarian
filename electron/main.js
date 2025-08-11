@@ -461,35 +461,42 @@ app.whenReady().then(async () => {
       // Prefer Python GUI if available; fallback to batch
       let child
       if (pyGui) {
-        // Try python, then py launcher
-        const tryLaunch = (cmd) => spawn(cmd, [pyGui], {
-          cwd: scriptDir,
-          env,
-          detached: true,
-          windowsHide: false,
-          stdio: 'ignore'
-        })
+        // Launch via 'start' so the GUI is fully detached from the Electron process group.
+        // This avoids premature termination when the app quits right after spawning.
         try {
-          child = tryLaunch('python')
-          child.on('error', () => {
-            try { child = tryLaunch('py') } catch {}
-          })
-        } catch {
-          // fallback to batch
-          child = spawn('cmd.exe', ['/c', 'start', '""', 'WinInstaller.bat'], {
+          child = spawn('cmd.exe', ['/c', 'start', '""', 'python', path.basename(pyGui)], {
             cwd: scriptDir,
-            env,
+            env: { ...env, GL_LAUNCHED_FROM_APP: '1' },
             detached: true,
             windowsHide: false,
             stdio: 'ignore'
           })
+        } catch {
+          try {
+            child = spawn('cmd.exe', ['/c', 'start', '""', 'py', path.basename(pyGui)], {
+              cwd: scriptDir,
+              env: { ...env, GL_LAUNCHED_FROM_APP: '1' },
+              detached: true,
+              windowsHide: false,
+              stdio: 'ignore'
+            })
+          } catch {
+            // fallback to batch
+            child = spawn('cmd.exe', ['/c', 'start', '""', 'WinInstaller.bat'], {
+              cwd: scriptDir,
+              env: { ...env, GL_LAUNCHED_FROM_APP: '1' },
+              detached: true,
+              windowsHide: false,
+              stdio: 'ignore'
+            })
+          }
         }
       } else {
         // Verify batch exists, then launch
         try { if (!fsSync.existsSync(installer)) throw new Error('Installer not found at ' + installer) } catch (e) { return { ok: false, error: String(e) } }
         child = spawn('cmd.exe', ['/c', 'start', '""', 'WinInstaller.bat'], {
           cwd: scriptDir,
-          env,
+          env: { ...env, GL_LAUNCHED_FROM_APP: '1' },
           detached: true,
           windowsHide: false,
           stdio: 'ignore'
@@ -501,7 +508,8 @@ app.whenReady().then(async () => {
       if (isDev) {
         await stopDevViteIfRunning()
       } else {
-        setTimeout(() => { try { app.quit() } catch {} }, 150)
+        // Give the spawned process a moment to initialize before quitting
+        setTimeout(() => { try { app.quit() } catch {} }, 1000)
       }
       return { ok: true }
     } catch (e) {

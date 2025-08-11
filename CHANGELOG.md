@@ -3,6 +3,7 @@
 ## Beta 1.22 (v6.22)
 
 - Added change log styling
+- Installer bug fix (Would pre-maturely close when updating from the app)
 
 ## Beta 1.21 (v6.21)
 
