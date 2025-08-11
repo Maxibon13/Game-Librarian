@@ -4,6 +4,7 @@
 
 - Tweaked the welcome page
 - Added new sound Notif.ogg
+- minor bug fixes
 
 ## Beta 1.3 (v6.3)
 

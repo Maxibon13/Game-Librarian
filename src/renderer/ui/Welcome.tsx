@@ -6,7 +6,7 @@ type Props = {
 
 export function Welcome({ onContinue }: Props) {
   const logo = new URL('../../Icon.png', import.meta.url).href
-  const notif = new URL('../../sounds/uibutton.ogg', import.meta.url).href
+  const notif = new URL('../../sounds/Notif.ogg', import.meta.url).href
   return (
     <div className="welcome-overlay">
       <div className="welcome-card">
