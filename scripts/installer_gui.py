@@ -74,6 +74,14 @@ class InstallerGUI:
         t = threading.Thread(target=self.run_installer, daemon=True)
         t.start()
 
+    # Unified logger: print to console and stream into GUI
+    def _emit(self, line: str):
+        try:
+            print(line, flush=True)
+        except Exception:
+            pass
+        self.output_queue.put(line)
+
     def run_installer(self):
         REPO_URL = os.environ.get('REPO_URL', 'https://github.com/Maxibon13/Game-Librarian.git')
         BRANCH = os.environ.get('BRANCH', 'main')
@@ -87,7 +95,7 @@ class InstallerGUI:
             self._fail(f'Failed to create/access target directory: "{target_dir}": {e}')
             return
 
-        self.output_queue.put(f'[INFO] Target directory: "{target_dir}"')
+        self._emit(f'[INFO] Target directory: "{target_dir}"')
 
         if not self._is_online():
             self._fail('Aborting installation - User is offline')
@@ -96,14 +104,14 @@ class InstallerGUI:
         tmp_base = Path(tempfile.gettempdir()) / 'GameLibrarian_update'
         tmp_base.mkdir(parents=True, exist_ok=True)
         tmp_dir = Path(tempfile.mkdtemp(prefix='GameLibrarian_', dir=str(tmp_base)))
-        self.output_queue.put(f'[INFO] Using temporary directory: "{tmp_dir}"')
+        self._emit(f'[INFO] Using temporary directory: "{tmp_dir}"')
 
         try:
             owner_repo = self._owner_repo_from_url(REPO_URL)
             zip_url = f'https://codeload.github.com/{owner_repo}/zip/refs/heads/{BRANCH}'
             zip_path = tmp_dir / 'repo.zip'
             self.status_var.set('Downloading latest version …')
-            self.output_queue.put(f'[INFO] Downloading latest source ZIP from {zip_url}')
+            self._emit(f'[INFO] Downloading latest source ZIP from {zip_url}')
             if not self._download_file(zip_url, zip_path):
                 self._cleanup_tmp(tmp_dir)
                 self._fail('Download failed')
@@ -115,7 +123,7 @@ class InstallerGUI:
                 return
 
             self.status_var.set('Extracting files …')
-            self.output_queue.put('[INFO] Extracting ZIP ...')
+            self._emit('[INFO] Extracting ZIP ...')
             extract_dir = tmp_dir / 'repo'
             extract_dir.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(zip_path, 'r') as zf:
@@ -129,25 +137,28 @@ class InstallerGUI:
             repo_root = entries[0]
 
             self.status_var.set('Syncing files …')
-            self.output_queue.put('[INFO] Syncing files to application directory ...')
+            self._emit('[INFO] Syncing files to application directory ...')
             self._copy_tree(src=repo_root, dst=target_dir, exclude_dirs={'.git', 'node_modules'})
+            self._emit('[DEBUG] File sync completed.')
 
             # Skipping npm dependency installation per user request
-            self.output_queue.put('[INFO] Skipping dependency installation (npm).')
+            self._emit('[INFO] Skipping dependency installation (npm).')
             self.status_var.set('Finalizing installation …')
 
+            self._emit(f'[DEBUG] Starting cleanup of temp directory: {tmp_dir}')
             self._cleanup_tmp(tmp_dir)
+            self._emit('[DEBUG] Cleanup complete.')
             self.success = True
-            self.output_queue.put('[INFO] Installer finished successfully.')
-            self.output_queue.put('__COMPLETE__')
+            self._emit('[INFO] Installer finished successfully.')
+            self._emit('__COMPLETE__')
         except Exception as e:
             self._cleanup_tmp(tmp_dir)
             self._fail(f'Unexpected error: {e}')
 
     def _fail(self, message: str):
         self.success = False
-        self.output_queue.put(f'[ERROR] {message}')
-        self.output_queue.put('__COMPLETE__')
+        self._emit(f'[ERROR] {message}')
+        self._emit('__COMPLETE__')
 
     def _is_online(self, host: str = 'github.com', port: int = 443, timeout: float = 3.5) -> bool:
         try:
@@ -158,7 +169,7 @@ class InstallerGUI:
 
     def _download_file(self, url: str, dest: Path) -> bool:
         try:
-            self.output_queue.put('[CMD] DOWNLOAD ' + url)
+            self._emit('[CMD] DOWNLOAD ' + url)
             req = urllib.request.Request(url, headers={'User-Agent': 'GameLibrarianInstaller/1.0'})
             with urllib.request.urlopen(req, timeout=60) as response:
                 total = int(response.headers.get('Content-Length') or '0')
@@ -172,10 +183,10 @@ class InstallerGUI:
                         downloaded += len(chunk)
                         if self.cancel_requested: return False
                         if total and ((downloaded % (512 * 1024) < chunk_size) or downloaded == total):
-                            self.output_queue.put(f'[INFO] Downloaded {downloaded // 1024} / {total // 1024} KiB')
+                            self._emit(f'[INFO] Downloaded {downloaded // 1024} / {total // 1024} KiB')
             return True
         except Exception as e:
-            self.output_queue.put(f'[ERROR] Download error: {e}')
+            self._emit(f'[ERROR] Download error: {e}')
             return False
 
     def _owner_repo_from_url(self, url: str) -> str:
@@ -209,7 +220,7 @@ class InstallerGUI:
 
     def _run_and_stream(self, args, cwd=None, env=None) -> bool:
         try:
-            self.output_queue.put('[CMD] ' + ' '.join([str(a) for a in args]))
+            self._emit('[CMD] ' + ' '.join([str(a) for a in args]))
             popen_kwargs = {
                 'cwd': str(cwd) if cwd else None, 'stdout': subprocess.PIPE,
                 'stderr': subprocess.STDOUT, 'stdin': subprocess.DEVNULL,
@@ -227,19 +238,19 @@ class InstallerGUI:
                     try: p.terminate()
                     except Exception: pass
                     return False
-                self.output_queue.put(line.rstrip())
+                self._emit(line.rstrip())
 
             code = p.wait()
             self.proc = None
             if code != 0:
-                self.output_queue.put(f'[ERROR] Command exited with code {code}')
+                self._emit(f'[ERROR] Command exited with code {code}')
                 return False
             return True
         except FileNotFoundError:
-            self.output_queue.put(f'[ERROR] Command not found: {args[0]}')
+            self._emit(f'[ERROR] Command not found: {args[0]}')
             return False
         except Exception as e:
-            self.output_queue.put(f'[ERROR] Failed to run command: {e}')
+            self._emit(f'[ERROR] Failed to run command: {e}')
             return False
 
     def _copy_tree(self, src: Path, dst: Path, exclude_dirs: set[str]):
@@ -255,10 +266,10 @@ class InstallerGUI:
                 try:
                     shutil.copy2(src_path, dst_path)
                 except Exception as e:
-                    self.output_queue.put(f'[WARN] Failed to copy {src_path} -> {dst_path}: {e}')
+                    self._emit(f'[WARN] Failed to copy {src_path} -> {dst_path}: {e}')
 
     def _cleanup_tmp(self, tmp_dir: Path):
-        self.output_queue.put('[INFO] Removing temporary directory ...')
+        self._emit('[INFO] Removing temporary directory ...')
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def drain_output_queue(self):
