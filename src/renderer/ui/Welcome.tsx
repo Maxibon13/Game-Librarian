@@ -6,6 +6,7 @@ type Props = {
 
 export function Welcome({ onContinue }: Props) {
   const logo = new URL('../../Icon.png', import.meta.url).href
+  const notif = new URL('../../sounds/uibutton.ogg', import.meta.url).href
   return (
     <div className="welcome-overlay">
       <div className="welcome-card">
@@ -47,7 +48,14 @@ export function Welcome({ onContinue }: Props) {
           </div>
         </div>
         <div className="welcome-actions">
-          <button className="btn btn-primary" onClick={onContinue}>Continue</button>
+          <button className="btn btn-primary" onClick={() => {
+            try {
+              const audio = new Audio(notif)
+              audio.volume = 0.7
+              audio.play().catch(() => {})
+            } catch {}
+            onContinue()
+          }}>Continue</button>
         </div>
       </div>
     </div>

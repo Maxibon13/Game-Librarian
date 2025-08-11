@@ -1,5 +1,10 @@
 # Changelog
 
+## Beta 1.31 (v6.31)
+
+- Tweaked the welcome page
+- Added new sound Notif.ogg
+
 ## Beta 1.3 (v6.3)
 
 - Added welcome page
