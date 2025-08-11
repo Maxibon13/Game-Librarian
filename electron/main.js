@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, nativeImage } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { GameDetectionService } from '../src/main/services/detection/GameDetectionService.js'
@@ -13,6 +13,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 let mainWindow = null
+let appIcon = null
 const detectionService = new GameDetectionService()
 let playtimeService = null
 let settingsService = null
@@ -180,9 +181,22 @@ async function registerIpcAndServices() {
 }
 
 async function createWindow() {
+  if (!appIcon) {
+    try {
+      // Resolve icon for both dev and packaged
+      const devIcon = path.join(process.cwd(), 'Icon.png')
+      const asarIcon = path.join(__dirname, '../Icon.png')
+      const resIcon = path.join(process.resourcesPath || '', 'Icon.png')
+      const candidates = [devIcon, asarIcon, resIcon]
+      for (const p of candidates) {
+        if (p && fsSync.existsSync(p)) { appIcon = nativeImage.createFromPath(p); break }
+      }
+    } catch {}
+  }
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    icon: appIcon || undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
