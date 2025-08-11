@@ -23,7 +23,7 @@
   - Purple Galaxy
   - Sea Breeze
 
-## Beta 1.22 (v6.21)
+## Beta 1.21 (v6.21)
 
 - Added change Log
 
