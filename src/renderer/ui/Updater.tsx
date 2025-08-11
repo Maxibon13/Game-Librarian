@@ -69,7 +69,7 @@ export function Updater({ onReady }: { onReady: () => void }) {
                   const res = await (window as any).electronAPI.installUpdateAndExit()
                   if (!res?.ok) {
                     const msg = res?.error ? String(res.error) : 'Unknown error'
-                    alert('Failed to start installer. ' + msg + '\nYou can run scripts/InstallerLite.bat manually.')
+                    alert('Failed to start installer. ' + msg + '\nYou can run scripts/WinInstaller.bat manually.')
                   }
                 } catch (e) {
                   alert('Failed to start installer: ' + (e as any)?.message)

@@ -321,15 +321,15 @@ app.whenReady().then(async () => {
     try {
       const isDev = !app.isPackaged
       const base = isDev ? process.cwd() : process.resourcesPath
-      const scriptDir = base
-      const installer = path.join(scriptDir, 'InstallerLite.bat')
+      const scriptDir = path.join(base, 'scripts')
+      const installer = path.join(scriptDir, 'WinInstaller.bat')
       const env = { ...process.env }
       const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
       env.INSTALL_DIR = desired
       // Verify installer exists
       try { if (!fsSync.existsSync(installer)) throw new Error('Installer not found at ' + installer) } catch (e) { return { ok: false, error: String(e) } }
       // Launch installer in a new window and detach so it continues after app quits
-      const child = spawn('cmd.exe', ['/c', 'start', '""', 'InstallerLite.bat'], {
+      const child = spawn('cmd.exe', ['/c', 'start', '""', 'WinInstaller.bat'], {
         cwd: scriptDir,
         env,
         detached: true,

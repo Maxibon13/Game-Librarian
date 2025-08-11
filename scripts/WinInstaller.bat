@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 REM ==========================================
-REM Game-Librarian Installer / Updater (Git)
+REM Game-Librarian Win Installer / Updater (Git)
 REM ==========================================
 
 REM --- CONFIG ---
@@ -13,9 +13,9 @@ REM --- TARGET DIR ---
 set "SCRIPT_DIR=%~dp0"
 if defined INSTALL_DIR (
   set "TARGET_DIR=%INSTALL_DIR%"
-else (
-  REM Default to the repo root (same directory as this script)
-  set "TARGET_DIR=%SCRIPT_DIR%"
+) else (
+  REM Default to project root (parent of scripts)
+  for %%I in ("%SCRIPT_DIR%..") do set "TARGET_DIR=%%~fI"
 )
 
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%" >nul 2>nul
@@ -40,9 +40,15 @@ set "GIT_TERMINAL_PROMPT=0"
 REM Silence safe.directory warnings when run elevated
 git config --global --add safe.directory "%CD%" >nul 2>nul
 
-REM --- CLONE TO TEMP DIRECTORY ---
+REM --- STEP 1/2: VALIDATE REPO AND CLONE TO TEMP DIRECTORY ---
 set "TMP_BASE=%TEMP%\GameLibrarian_update"
 set "TMP_DIR=%TMP_BASE%_%RANDOM%_%RANDOM%"
+
+echo [INFO] Checking repository availability ...
+git ls-remote --exit-code "%REPO_URL%" >nul 2>nul || (
+  echo [ERROR] Could not reach repository: %REPO_URL%
+  goto :fail
+)
 
 echo [INFO] Creating temporary directory: "%TMP_DIR%"
 mkdir "%TMP_DIR%" >nul 2>nul || (
@@ -53,41 +59,49 @@ mkdir "%TMP_DIR%" >nul 2>nul || (
 echo [INFO] Cloning "%REPO_URL%" (branch: %BRANCH%) into temp ...
 git clone --depth 1 -b "%BRANCH%" --recurse-submodules --shallow-submodules "%REPO_URL%" "%TMP_DIR%" || goto :fail
 
-REM --- COPY CHANGED EXISTING FILES ONLY (exclude new files) ---
-echo [INFO] Syncing files from temp clone (including new files) ...
-robocopy "%TMP_DIR%" "%TARGET_DIR%" /E /R:1 /W:1 /XD .git node_modules /XF InstallerLite.bat 1>nul
-set "RC=%ERRORLEVEL%"
-if %RC% GEQ 8 (
-  echo [ERROR] File update failed with robocopy exit code %RC%.
-  goto :fail
-)
-
-REM --- PREPARE COMPILED INSTALL (ensure dependencies, build UI, and package) ---
-echo [INFO] Ensuring Node.js is available and installing dependencies ...
+REM --- STEP 3: COMPILE IN TEMP (after npm check) ---
+echo [INFO] Ensuring Node.js is available ...
 where node >nul 2>nul || (
   echo [ERROR] Node.js is required but was not found in PATH.
   echo         Please install Node.js: https://nodejs.org/
   goto :fail
 )
 
-pushd "%TARGET_DIR%" >nul || goto :fail
-echo [INFO] Running npm install ...
+pushd "%TMP_DIR%" >nul || goto :fail
+echo [INFO] Installing dependencies in temp clone ...
 call npm ci || call npm install || goto :fail
 
-echo [INFO] Building UI with Vite ...
+echo [INFO] Building UI with Vite in temp clone ...
 call npm run build || goto :fail
-
-echo [INFO] Packaging application (directory build) ...
-call npm run dist:win || goto :fail
-
-REM After packaging, prefer running packaged build if available; otherwise keep source
-set "PACKED_DIR=%TARGET_DIR%\dist\win-unpacked"
-if exist "%PACKED_DIR%\Game Librarian.exe" (
-  echo [INFO] Packaged app created at: "%PACKED_DIR%"
-) else (
-  echo [WARN] Packaged app folder not found. The app will run from source but UI is compiled.
-)
 popd >nul
+
+REM --- STEP 4: COPY BUILT OUTPUT AND RELEVANT FILES TO ROOT (changed files only) ---
+if exist "%TARGET_DIR%" (
+  echo [INFO] Updating existing root with built files (changed files only) ...
+  rem Copy dist
+  if exist "%TMP_DIR%\dist" (
+    robocopy "%TMP_DIR%\dist" "%TARGET_DIR%\dist" /E /R:1 /W:1 1>nul
+  )
+  rem Copy electron main process code
+  if exist "%TMP_DIR%\electron" (
+    robocopy "%TMP_DIR%\electron" "%TARGET_DIR%\electron" /E /R:1 /W:1 1>nul
+  )
+  rem Copy backend services code
+  if exist "%TMP_DIR%\src\main" (
+    robocopy "%TMP_DIR%\src\main" "%TARGET_DIR%\src\main" /E /R:1 /W:1 1>nul
+  )
+  rem Copy scripts
+  if exist "%TMP_DIR%\scripts" (
+    robocopy "%TMP_DIR%\scripts" "%TARGET_DIR%\scripts" /E /R:1 /W:1 1>nul
+  )
+  rem Copy version file
+  if exist "%TMP_DIR%\Version.Json" (
+    copy /Y "%TMP_DIR%\Version.Json" "%TARGET_DIR%\Version.Json" >nul 2>nul
+  )
+) else (
+  echo [INFO] Target root does not exist, creating fresh copy ...
+  robocopy "%TMP_DIR%" "%TARGET_DIR%" /E /R:1 /W:1 /XD .git node_modules 1>nul
+)
 
 REM --- SUCCESS ---
 :success

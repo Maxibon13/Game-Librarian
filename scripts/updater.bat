@@ -5,7 +5,7 @@ REM Updater for Game Librarian
 REM - Checks local Version.Json
 REM - Fetches remote Version.Json from GitHub main branch
 REM - Prints JSON status in "check" mode
-REM - Optionally runs InstallerLite.bat to update into root folder "Game Librarian"
+REM - Optionally runs WinInstaller.bat to update into root folder "Game Librarian"
 
 set "REPO_URL=https://github.com/Maxibon13/Game-Librarian"
 set "RAW_VERSION_URL=https://raw.githubusercontent.com/Maxibon13/Game-Librarian/main/Version.Json"
@@ -51,12 +51,12 @@ if "%UPDATE_AVAILABLE%"=="1" (
   if not exist "%INSTALL_DIR%" (
     mkdir "%INSTALL_DIR%" >nul 2>nul
   )
-  echo [INFO] Installing/updating into "%INSTALL_DIR%" using root InstallerLite.bat ...
+  echo [INFO] Installing/updating into "%INSTALL_DIR%" using scripts/WinInstaller.bat ...
   set "_OLD_CD=%CD%"
-  pushd "%ROOT_DIR_NORM%" >nul
+  pushd "%SCRIPT_DIR%" >nul
   REM Pass INSTALL_DIR to InstallerLite so it installs into desired root
   set "INSTALL_DIR=%INSTALL_DIR%"
-  call cmd /c "%ROOT_DIR_NORM%\InstallerLite.bat"
+  call cmd /c "%SCRIPT_DIR%WinInstaller.bat"
   set "ERR=%ERRORLEVEL%"
   popd >nul
   if not "%ERR%"=="0" (
