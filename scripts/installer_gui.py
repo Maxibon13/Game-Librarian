@@ -140,14 +140,6 @@ class InstallerGUI:
                 self._fail('npm not available and automatic installation failed. Please install Node.js from https://nodejs.org/')
                 return
 
-            # 7. Run npm install
-            env = os.environ.copy()
-            if not self._run_and_stream([npm_cmd, 'ci'], cwd=target_dir, env=env):
-                if not self._run_and_stream([npm_cmd, 'install'], cwd=target_dir, env=env):
-                    self._cleanup_tmp(tmp_dir)
-                    self._fail('npm install failed')
-                    return
-
             # 5. Clean up temp
             self._cleanup_tmp(tmp_dir)
 
