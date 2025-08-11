@@ -12,6 +12,10 @@ export class SettingsService {
       epic: {
         manifestDir: ''
       },
+      // Theme preferences (preset themes only)
+      theme: {
+        name: 'dark' // See App.tsx for available presets
+      },
       // UI preferences persisted between sessions
       ui: {
         viewMode: 'large', // 'large' | 'small' | 'list'

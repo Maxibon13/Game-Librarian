@@ -9,12 +9,14 @@ type Props = {
 type SettingsData = {
   steam: { steamPath: string; customLibraries: string[] }
   epic: { manifestDir: string }
+  theme?: { name: string }
 }
 
 export function Settings({ onSaved, audio, onAudioChange }: Props) {
   const [settings, setSettings] = useState<SettingsData>({
     steam: { steamPath: '', customLibraries: [] },
-    epic: { manifestDir: '' }
+    epic: { manifestDir: '' },
+    theme: { name: 'dark' }
   })
   const [audioEnabled, setAudioEnabled] = useState<boolean>(audio?.enabled ?? true)
   const [masterVolume, setMasterVolume] = useState<number>(audio?.masterVolume ?? 1)
@@ -136,6 +138,8 @@ export function Settings({ onSaved, audio, onAudioChange }: Props) {
         </label>
       </section>
 
+      {/* Theme section removed per request. Theme can be switched from the top bar dropdown. */}
+
       <section>
         <h2>Developer</h2>
         <div style={{ fontSize: 12, opacity: 0.75 }}>
@@ -165,5 +169,7 @@ export function Settings({ onSaved, audio, onAudioChange }: Props) {
     </div>
   )
 }
+
+// custom theme UI removed per request
 
 

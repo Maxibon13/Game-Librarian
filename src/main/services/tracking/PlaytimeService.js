@@ -253,7 +253,7 @@ export class PlaytimeService {
     let trackedPids = new Set()
     let seeded = false
     const seedWindowMs = 45000
-    const graceAfterEmptyMs = 5000
+    const graceAfterEmptyMs = 3500
     let emptySinceTs = null
     const DEBUG = true
     const log = (...args) => { if (DEBUG) console.log('[PlaytimeDetector]', ...args) }
