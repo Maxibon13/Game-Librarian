@@ -11,6 +11,7 @@
     "start": "electron .",
     "build": "vite build",
     "build:ui": "vite build",
+    "dist:dir": "electron-builder --win --dir",
     "dist:win": "electron-builder --win nsis",
     "dist": "electron-builder -w",
     "postinstall": "node scripts/postinstall.mjs"
@@ -53,6 +54,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "InstallerLite.bat",
+        "to": "InstallerLite.bat"
       }
     ],
     "directories": {

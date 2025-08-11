@@ -13,8 +13,9 @@ REM --- TARGET DIR ---
 set "SCRIPT_DIR=%~dp0"
 if defined INSTALL_DIR (
   set "TARGET_DIR=%INSTALL_DIR%"
-) else (
-  set "TARGET_DIR=%SCRIPT_DIR%.."
+else (
+  REM Default to the repo root (same directory as this script)
+  set "TARGET_DIR=%SCRIPT_DIR%"
 )
 
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%" >nul 2>nul
@@ -53,13 +54,40 @@ echo [INFO] Cloning "%REPO_URL%" (branch: %BRANCH%) into temp ...
 git clone --depth 1 -b "%BRANCH%" --recurse-submodules --shallow-submodules "%REPO_URL%" "%TMP_DIR%" || goto :fail
 
 REM --- COPY CHANGED EXISTING FILES ONLY (exclude new files) ---
-echo [INFO] Updating existing files from temp clone (excluding new files) ...
-robocopy "%TMP_DIR%" "%TARGET_DIR%" /E /XL /R:1 /W:1 /XD .git node_modules /XF InstallerLite.bat 1>nul
+echo [INFO] Syncing files from temp clone (including new files) ...
+robocopy "%TMP_DIR%" "%TARGET_DIR%" /E /R:1 /W:1 /XD .git node_modules /XF InstallerLite.bat 1>nul
 set "RC=%ERRORLEVEL%"
 if %RC% GEQ 8 (
   echo [ERROR] File update failed with robocopy exit code %RC%.
   goto :fail
 )
+
+REM --- PREPARE COMPILED INSTALL (ensure dependencies, build UI, and package) ---
+echo [INFO] Ensuring Node.js is available and installing dependencies ...
+where node >nul 2>nul || (
+  echo [ERROR] Node.js is required but was not found in PATH.
+  echo         Please install Node.js: https://nodejs.org/
+  goto :fail
+)
+
+pushd "%TARGET_DIR%" >nul || goto :fail
+echo [INFO] Running npm install ...
+call npm ci || call npm install || goto :fail
+
+echo [INFO] Building UI with Vite ...
+call npm run build || goto :fail
+
+echo [INFO] Packaging application (directory build) ...
+call npm run dist:win || goto :fail
+
+REM After packaging, prefer running packaged build if available; otherwise keep source
+set "PACKED_DIR=%TARGET_DIR%\dist\win-unpacked"
+if exist "%PACKED_DIR%\Game Librarian.exe" (
+  echo [INFO] Packaged app created at: "%PACKED_DIR%"
+) else (
+  echo [WARN] Packaged app folder not found. The app will run from source but UI is compiled.
+)
+popd >nul
 
 REM --- SUCCESS ---
 :success
@@ -87,3 +115,5 @@ exit /b 1
 echo [INFO] Removing temporary directory ...
 rmdir /s /q "%TMP_DIR%" >nul 2>nul
 exit /b 0
+
+

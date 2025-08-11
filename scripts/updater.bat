@@ -51,12 +51,12 @@ if "%UPDATE_AVAILABLE%"=="1" (
   if not exist "%INSTALL_DIR%" (
     mkdir "%INSTALL_DIR%" >nul 2>nul
   )
-  echo [INFO] Installing/updating into "%INSTALL_DIR%" using InstallerLite.bat ...
+  echo [INFO] Installing/updating into "%INSTALL_DIR%" using root InstallerLite.bat ...
   set "_OLD_CD=%CD%"
-  pushd "%SCRIPT_DIR%" >nul
+  pushd "%ROOT_DIR_NORM%" >nul
   REM Pass INSTALL_DIR to InstallerLite so it installs into desired root
   set "INSTALL_DIR=%INSTALL_DIR%"
-  call cmd /c "%SCRIPT_DIR%InstallerLite.bat"
+  call cmd /c "%ROOT_DIR_NORM%\InstallerLite.bat"
   set "ERR=%ERRORLEVEL%"
   popd >nul
   if not "%ERR%"=="0" (

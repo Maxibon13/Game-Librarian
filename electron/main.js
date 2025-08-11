@@ -314,7 +314,7 @@ app.whenReady().then(async () => {
     try {
       const isDev = !app.isPackaged
       const base = isDev ? process.cwd() : process.resourcesPath
-      const scriptDir = path.join(base, 'scripts')
+      const scriptDir = base
       const installer = path.join(scriptDir, 'InstallerLite.bat')
       const env = { ...process.env }
       const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
