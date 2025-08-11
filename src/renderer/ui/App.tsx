@@ -8,6 +8,7 @@ import { Settings } from './Settings'
 import { SessionEndedCard } from './SessionEndedCard'
 import GameMenuOverlay from './GameMenuOverlay'
 import { ThemeSelect } from './ThemeSelect'
+import { Changelog } from './Changelog'
 
 export type Game = {
   id: string
@@ -35,6 +36,7 @@ export function App() {
   const [masterVolume, setMasterVolume] = useState(1)
   const [appVersion, setAppVersion] = useState<string | null>(null)
   const [theme, setTheme] = useState<string>('dark')
+  const [showChangelog, setShowChangelog] = useState(false)
 
   useEffect(() => {
     const api = (window as any).electronAPI
@@ -412,6 +414,8 @@ export function App() {
           v{appVersion}
         </div>
       )}
+      <button className="changelog-button" onClick={() => setShowChangelog(true)}>Changelog</button>
+      {showChangelog && <Changelog onClose={() => setShowChangelog(false)} />}
     </div>
   )
 }

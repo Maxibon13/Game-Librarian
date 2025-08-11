@@ -211,3 +211,22 @@ body { margin:0; font-family: Inter, system-ui, Arial, sans-serif; background:ra
   pointer-events: none;
 }
 
+/* Changelog button (bottom-right) */
+.changelog-button {
+  position: fixed; right: 12px; bottom: 10px; z-index: 5;
+  font-size: 12px; letter-spacing: .2px; color: rgba(230,231,235, .9);
+  background: rgba(20,22,27, .6);
+  border: 1px solid rgba(38,42,51,.85);
+  box-shadow: 0 6px 18px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,0.03);
+  padding: 6px 10px; border-radius: 8px; backdrop-filter: blur(6px);
+}
+.changelog-button:hover { filter: brightness(1.05) }
+
+/* Changelog modal */
+.modal-overlay { position: fixed; inset:0; z-index: 2200; display:flex; align-items:center; justify-content:center; backdrop-filter: blur(14px); background: rgba(10,11,14, .4); animation: fadeInOverlay .22s ease forwards }
+.changelog-card { width: min(920px, 92vw); height: min(72vh, 680px); display:flex; flex-direction:column; gap:12px; padding:20px; border-radius: 14px; background: linear-gradient(180deg, var(--panel), var(--panel-2)); border:1px solid #262a33; box-shadow: 0 24px 80px rgba(0,0,0,.6); animation: popIn .22s ease forwards }
+.changelog-title { font-size: 18px; font-weight: 800; letter-spacing: .3px }
+.changelog-content { flex:1; overflow:auto; background: #0f1116; border:1px solid #222733; border-radius:10px; padding:12px }
+.changelog-actions { display:flex; justify-content:flex-end; gap:8px }
+.md-plain { white-space: pre-wrap; line-height: 1.45; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px }
+
