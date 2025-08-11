@@ -219,7 +219,17 @@ body { margin:0; font-family: Inter, system-ui, Arial, sans-serif; background:ra
 .modal-overlay { position: fixed; inset:0; z-index: 2200; display:flex; align-items:center; justify-content:center; backdrop-filter: blur(14px); background: rgba(10,11,14, .4); animation: fadeInOverlay .22s ease forwards }
 .changelog-card { width: min(920px, 92vw); height: min(72vh, 680px); display:flex; flex-direction:column; gap:12px; padding:20px; border-radius: 14px; background: linear-gradient(180deg, var(--panel), var(--panel-2)); border:1px solid #262a33; box-shadow: 0 24px 80px rgba(0,0,0,.6); animation: popIn .22s ease forwards }
 .changelog-title { font-size: 18px; font-weight: 800; letter-spacing: .3px }
-.changelog-content { flex:1; overflow:auto; background: #0f1116; border:1px solid #222733; border-radius:10px; padding:12px }
+.changelog-content { flex:1; overflow:auto; background: #0f1116; border:1px solid #222733; border-radius:10px; padding:18px }
 .changelog-actions { display:flex; justify-content:flex-end; gap:8px }
-.md-plain { white-space: pre-wrap; line-height: 1.45; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px }
+
+/* GitHub-like markdown styling */
+.md-github { color: #e6e7eb; line-height: 1.55 }
+.md-github h1 { font-size: 24px; margin: 2px 0 10px 0; font-weight: 800 }
+.md-github h2 { font-size: 18px; margin: 16px 0 8px 0; font-weight: 800; border-bottom: 1px solid #2a2d35; padding-bottom: 6px }
+.md-github h3 { font-size: 15px; margin: 12px 0 6px 0; font-weight: 700 }
+.md-github p { margin: 6px 0 }
+.md-github .md-space { height: 6px }
+.md-github .md-li { margin: 3px 0; opacity: .95 }
+.md-github code { background: #11161e; border:1px solid #273041; padding: 1px 6px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px }
+.md-code { background: #0e1320; border:1px solid #253046; color:#e2eaff; padding: 10px 12px; border-radius: 8px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px }
 

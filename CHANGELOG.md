@@ -1,5 +1,13 @@
 # Changelog
 
+## Beta 1.22 (v6.22)
+
+- Added change log styling
+
+## Beta 1.21 (v6.21)
+
+- Added change Log
+
 ## Beta 1.2 (v6.2)
 
 - Added various UI changes
@@ -22,8 +30,3 @@
   - Orange Sunrise
   - Purple Galaxy
   - Sea Breeze
-
-## Beta 1.21 (v6.21)
-
-- Added change Log
-
