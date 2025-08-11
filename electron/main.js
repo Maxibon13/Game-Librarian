@@ -193,7 +193,28 @@ async function createWindow() {
 
   const isDev = !app.isPackaged
   if (isDev) {
-    await mainWindow.loadURL('http://localhost:5173')
+    const cfg = settingsService ? settingsService.get() : { dev: { autoStartVite: false } }
+    const shouldAutoStartVite = !!(cfg && cfg.dev && cfg.dev.autoStartVite)
+    const url = 'http://localhost:5173'
+    if (shouldAutoStartVite) {
+      try {
+        // Spawn Vite hidden without a visible console (Windows hidden via start + /B)
+        const isWin = process.platform === 'win32'
+        if (isWin) {
+          // Use cmd to start npm run vite in background without new window
+          spawn('cmd.exe', ['/c', 'start', '/B', 'npm', 'run', 'vite'], {
+            cwd: process.cwd(),
+            env: { ...process.env },
+            detached: false,
+            windowsHide: true,
+            stdio: 'ignore'
+          })
+        } else {
+          spawn('npm', ['run', 'vite'], { cwd: process.cwd(), env: { ...process.env }, stdio: 'ignore', detached: true })
+        }
+      } catch {}
+    }
+    await mainWindow.loadURL(url)
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     // In production we ship the built UI under app.asar/dist
