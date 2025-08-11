@@ -291,6 +291,7 @@ async function createWindow() {
       }
     } catch {}
   }
+  const isDev = !app.isPackaged
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -299,11 +300,14 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      // Allow loading file:/// images/resources when UI runs from http://localhost in dev
+      webSecurity: isDev ? false : true,
+      allowRunningInsecureContent: isDev ? true : false
     }
   })
 
-  const isDev = !app.isPackaged
+  
   if (isDev) {
     const url = 'http://localhost:5173'
     // If Python launcher is managing processes, skip auto-start here

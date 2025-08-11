@@ -1,5 +1,16 @@
 # Changelog
 
+## Beta 1.4 (v6.4)
+
+- Installer Updates 
+  - Cleaning up old files from the root folder that arent found in repo
+  - does not include folders: [TESTING & MOD]
+  - Create shortcut to desktop / startup / search option added
+  - Auto run after completeing update
+
+- Compiled launcher
+  - replacing the old pyw with an icon file for asthetics
+
 ## Beta 1.31 (v6.31)
 
 - Tweaked the welcome page

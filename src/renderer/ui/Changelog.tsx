@@ -19,7 +19,7 @@ export function Changelog({ onClose }: Props) {
         const u = new URL(repo)
         const [owner, name] = u.pathname.replace(/^\//, '').split('/')
         const raw = `https://raw.githubusercontent.com/${owner}/${name}/main/CHANGELOG.md`
-        const res = await fetch(raw, { cache: 'no-store' })
+        const res = await fetch(raw, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
         if (!res.ok) throw new Error(String(res.status))
         const md = await res.text()
         if (!cancelled) setText(md || 'Empty changelog')
@@ -36,9 +36,9 @@ export function Changelog({ onClose }: Props) {
 
   function escapeHtml(s: string) {
     return s
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
   }
 
   function renderSimpleMarkdown(md: string) {
