@@ -49,6 +49,10 @@ class InstallerGUI:
         self.status = ttk.Label(bottom, textvariable=self.status_var)
         self.status.pack(side='left')
 
+        # Indeterminate spinner to show activity
+        self.progress = ttk.Progressbar(bottom, mode='indeterminate', length=180)
+        self.progress.pack(side='left', padx=(8, 0))
+
         self.cancel_btn = ttk.Button(bottom, text='Cancel', command=self.on_cancel)
         self.cancel_btn.pack(side='right')
 
@@ -56,6 +60,7 @@ class InstallerGUI:
         self.finish_btn.pack(side='right', padx=(0, 8))
 
         self.append_line('[INFO] Starting installer…')
+        self.progress.start(60)
         self.start_installer_thread()
         self.root.after(80, self.drain_output_queue)
 
@@ -105,6 +110,7 @@ class InstallerGUI:
             owner_repo = self._owner_repo_from_url(REPO_URL)
             zip_url = f'https://codeload.github.com/{owner_repo}/zip/refs/heads/{BRANCH}'
             zip_path = tmp_dir / 'repo.zip'
+            self.status_var.set('Downloading latest version …')
             self.output_queue.put(f'[INFO] Downloading latest source ZIP from {zip_url}')
             if not self._download_file(zip_url, zip_path):
                 self._cleanup_tmp(tmp_dir)
@@ -116,6 +122,7 @@ class InstallerGUI:
                 self._fail('Cancelled')
                 return
 
+            self.status_var.set('Extracting files …')
             self.output_queue.put('[INFO] Extracting ZIP ...')
             extract_dir = tmp_dir / 'repo'
             extract_dir.mkdir(parents=True, exist_ok=True)
@@ -130,6 +137,7 @@ class InstallerGUI:
             repo_root = entries[0]
 
             # 4. Sync files
+            self.status_var.set('Syncing files …')
             self.output_queue.put('[INFO] Syncing files to application directory ...')
             self._copy_tree(src=repo_root, dst=target_dir, exclude_dirs={'.git', 'node_modules'})
 
@@ -139,6 +147,15 @@ class InstallerGUI:
                 self._cleanup_tmp(tmp_dir)
                 self._fail('npm not available and automatic installation failed. Please install Node.js from https://nodejs.org/')
                 return
+
+            # 7. Install dependencies
+            self.status_var.set('Installing dependencies (npm) …')
+            env = os.environ.copy()
+            if not self._run_and_stream([npm_cmd, 'ci'], cwd=target_dir, env=env):
+                if not self._run_and_stream([npm_cmd, 'install'], cwd=target_dir, env=env):
+                    self._cleanup_tmp(tmp_dir)
+                    self._fail('npm install failed')
+                    return
 
             # 5. Clean up temp
             self._cleanup_tmp(tmp_dir)
@@ -167,7 +184,9 @@ class InstallerGUI:
     def _download_file(self, url: str, dest: Path) -> bool:
         try:
             self.output_queue.put('[CMD] DOWNLOAD ' + url)
-            with urllib.request.urlopen(url, timeout=60) as response:
+            # Add a User-Agent to avoid occasional 403s and enable better CDN behavior
+            req = urllib.request.Request(url, headers={'User-Agent': 'GameLibrarianInstaller/1.0'})
+            with urllib.request.urlopen(req, timeout=60) as response:
                 total = int(response.headers.get('Content-Length') or '0')
                 chunk_size = 8192
                 downloaded = 0
@@ -178,8 +197,12 @@ class InstallerGUI:
                             break
                         f.write(chunk)
                         downloaded += len(chunk)
+                        if self.cancel_requested:
+                            return False
+                        # Emit progress every ~512 KiB or on completion
                         if total:
-                            self.output_queue.put(f'[INFO] Downloaded {downloaded // 1024} / {total // 1024} KiB')
+                            if (downloaded % (512 * 1024) < chunk_size) or downloaded == total:
+                                self.output_queue.put(f'[INFO] Downloaded {downloaded // 1024} / {total // 1024} KiB')
             return True
         except Exception as e:
             self.output_queue.put(f'[ERROR] Download error: {e}')
@@ -304,6 +327,11 @@ class InstallerGUI:
         self.status_var.set('Completed.' if self.success else 'Completed with errors.')
         self.finish_btn.configure(state='normal')
         self.cancel_btn.configure(state='disabled')
+        try:
+            self.progress.stop()
+            self.progress.configure(mode='determinate', value=100)
+        except Exception:
+            pass
 
     def on_cancel(self):
         self.cancel_requested = True
@@ -314,6 +342,10 @@ class InstallerGUI:
                 pass
         self.status_var.set('Cancelling …')
         self.append_line('[INFO] Cancel requested by user.')
+        try:
+            self.progress.stop()
+        except Exception:
+            pass
 
     def on_finish(self):
         try:
