@@ -270,6 +270,9 @@ export function App() {
                 <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>
                   Settings
                 </button>
+                <button className="" onClick={() => setShowChangelog(true)} title="Changelog">
+                  Changelog
+                </button>
               </nav>
             </div>
             {tab === 'library' && (
@@ -414,7 +417,6 @@ export function App() {
           v{appVersion}
         </div>
       )}
-      <button className="changelog-button" onClick={() => setShowChangelog(true)}>Changelog</button>
       {showChangelog && <Changelog onClose={() => setShowChangelog(false)} />}
     </div>
   )
