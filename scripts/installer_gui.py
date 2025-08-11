@@ -141,8 +141,29 @@ class InstallerGUI:
             self._copy_tree(src=repo_root, dst=target_dir, exclude_dirs={'.git', 'node_modules'})
             self._emit('[DEBUG] File sync completed.')
 
-            # Skipping npm dependency installation per user request
-            self._emit('[INFO] Skipping dependency installation (npm).')
+            # Re-enable npm install
+            self.status_var.set('Checking Node.js/npm …')
+            npm_cmd = self._ensure_npm_available()
+            if not npm_cmd:
+                self._cleanup_tmp(tmp_dir)
+                self._fail('npm not available. Please install Node.js from https://nodejs.org/ and try again.')
+                return
+            # log versions for debugging
+            self._emit('[INFO] Node/npm detected. Printing versions …')
+            self._run_and_stream([npm_cmd, '--version'], cwd=target_dir, env=os.environ.copy())
+            node_exe = shutil.which('node') or 'node'
+            self._run_and_stream([node_exe, '--version'], cwd=target_dir, env=os.environ.copy())
+
+            # Install dependencies
+            self.status_var.set('Installing dependencies (npm) …')
+            env = os.environ.copy()
+            if not self._run_and_stream([npm_cmd, 'ci'], cwd=target_dir, env=env):
+                self._emit('[WARN] npm ci failed, falling back to npm install …')
+                if not self._run_and_stream([npm_cmd, 'install'], cwd=target_dir, env=env):
+                    self._cleanup_tmp(tmp_dir)
+                    self._fail('npm install failed')
+                    return
+            self._emit('[INFO] Dependency installation completed.')
             self.status_var.set('Finalizing installation …')
 
             self._emit(f'[DEBUG] Starting cleanup of temp directory: {tmp_dir}')
