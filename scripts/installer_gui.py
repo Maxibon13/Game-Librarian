@@ -278,13 +278,14 @@ class InstallerGUI:
                 line = self.output_queue.get_nowait()
                 if line == '__COMPLETE__':
                     self.on_complete()
-                    break
+                    # keep draining any remaining lines (in case multiple markers or late logs)
+                    continue
                 self.append_line(line)
         except queue.Empty:
             pass
         finally:
-            if self.finish_btn['state'] == 'disabled':
-                self.root.after(120, self.drain_output_queue)
+            # Always continue polling; harmless after completion and ensures UI stays updated
+            self.root.after(120, self.drain_output_queue)
 
     def on_complete(self):
         self.status_var.set('Completed.' if self.success else 'Completed with errors.')
@@ -292,7 +293,8 @@ class InstallerGUI:
         self.cancel_btn.configure(state='disabled')
         try:
             self.progress.stop()
-            self.progress.configure(mode='determinate', value=100)
+            # Fill the bar and switch to determinate to visually indicate finish
+            self.progress.configure(mode='determinate', maximum=100, value=100)
         except Exception: pass
 
     def on_cancel(self):
