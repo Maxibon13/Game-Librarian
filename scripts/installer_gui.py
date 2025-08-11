@@ -132,19 +132,9 @@ class InstallerGUI:
             self.output_queue.put('[INFO] Syncing files to application directory ...')
             self._copy_tree(src=repo_root, dst=target_dir, exclude_dirs={'.git', 'node_modules'})
 
-            npm_cmd = self._ensure_npm_available()
-            if not npm_cmd:
-                self._cleanup_tmp(tmp_dir)
-                self._fail('npm not available and automatic installation failed. Please install Node.js from https://nodejs.org/')
-                return
-
-            self.status_var.set('Installing dependencies (npm) …')
-            env = os.environ.copy()
-            if not self._run_and_stream([npm_cmd, 'ci'], cwd=target_dir, env=env):
-                if not self._run_and_stream([npm_cmd, 'install'], cwd=target_dir, env=env):
-                    self._cleanup_tmp(tmp_dir)
-                    self._fail('npm install failed')
-                    return
+            # Skipping npm dependency installation per user request
+            self.output_queue.put('[INFO] Skipping dependency installation (npm).')
+            self.status_var.set('Finalizing installation …')
 
             self._cleanup_tmp(tmp_dir)
             self.success = True
@@ -258,9 +248,14 @@ class InstallerGUI:
             dirs[:] = [d for d in dirs if d not in exclude_dirs]
             (dst / rel).mkdir(parents=True, exist_ok=True)
             for f in files:
-                if any(part in exclude_dirs for part in Path(root).parts): continue
-                try: shutil.copy2(Path(root) / f, dst / rel / f)
-                except Exception as e: self.output_queue.put(f'[WARN] Failed to copy {s} -> {d}: {e}')
+                if any(part in exclude_dirs for part in Path(root).parts):
+                    continue
+                src_path = Path(root) / f
+                dst_path = dst / rel / f
+                try:
+                    shutil.copy2(src_path, dst_path)
+                except Exception as e:
+                    self.output_queue.put(f'[WARN] Failed to copy {src_path} -> {dst_path}: {e}')
 
     def _cleanup_tmp(self, tmp_dir: Path):
         self.output_queue.put('[INFO] Removing temporary directory ...')
