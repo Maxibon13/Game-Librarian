@@ -332,20 +332,48 @@ app.whenReady().then(async () => {
       const isDev = !app.isPackaged
       const base = isDev ? process.cwd() : process.resourcesPath
       const scriptDir = path.join(base, 'scripts')
+      const pyGui = path.join(scriptDir, 'installer_gui.py')
       const installer = path.join(scriptDir, 'WinInstaller.bat')
       const env = { ...process.env }
       const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
       env.INSTALL_DIR = desired
-      // Verify installer exists
-      try { if (!fsSync.existsSync(installer)) throw new Error('Installer not found at ' + installer) } catch (e) { return { ok: false, error: String(e) } }
-      // Launch installer in a new window and detach so it continues after app quits
-      const child = spawn('cmd.exe', ['/c', 'start', '""', 'WinInstaller.bat'], {
-        cwd: scriptDir,
-        env,
-        detached: true,
-        windowsHide: false,
-        stdio: 'ignore'
-      })
+      // Prefer Python GUI if available; fallback to batch
+      let child
+      if (fsSync.existsSync(pyGui)) {
+        // Try python, then py launcher
+        const tryLaunch = (cmd) => spawn(cmd, [pyGui], {
+          cwd: scriptDir,
+          env,
+          detached: true,
+          windowsHide: false,
+          stdio: 'ignore'
+        })
+        try {
+          child = tryLaunch('python')
+          child.on('error', () => {
+            try { child = tryLaunch('py') } catch {}
+          })
+        } catch {
+          // fallback to batch
+          child = spawn('cmd.exe', ['/c', 'start', '""', 'WinInstaller.bat'], {
+            cwd: scriptDir,
+            env,
+            detached: true,
+            windowsHide: false,
+            stdio: 'ignore'
+          })
+        }
+      } else {
+        // Verify batch exists, then launch
+        try { if (!fsSync.existsSync(installer)) throw new Error('Installer not found at ' + installer) } catch (e) { return { ok: false, error: String(e) } }
+        child = spawn('cmd.exe', ['/c', 'start', '""', 'WinInstaller.bat'], {
+          cwd: scriptDir,
+          env,
+          detached: true,
+          windowsHide: false,
+          stdio: 'ignore'
+        })
+      }
       child.unref()
       // In dev, stop Vite to clean up the console instead of quitting the app.
       // In production, quit the app as before.
