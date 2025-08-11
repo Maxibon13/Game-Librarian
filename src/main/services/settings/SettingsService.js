@@ -23,9 +23,7 @@ export class SettingsService {
         masterVolume: 1.0
       },
       // Dev/debug options
-      dev: {
-        autoStartVite: false
-      }
+      
     }
   }
 
