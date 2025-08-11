@@ -80,13 +80,20 @@ function parseOwnerRepo(repoUrl) {
   return { owner: 'Maxibon13', repo: 'Game-Librarian' }
 }
 
+function normalizeVersionString(v) {
+  try { return String(v || '').trim() } catch { return '0' }
+}
+
 function compareSemver(a, b) {
-  const toNums = (v) => String(v || '0').split('.').map((x) => parseInt(x, 10) || 0)
-  const [a1, a2, a3] = toNums(a)
-  const [b1, b2, b3] = toNums(b)
-  if (a1 !== b1) return a1 - b1
-  if (a2 !== b2) return a2 - b2
-  return a3 - b3
+  const as = normalizeVersionString(a).split('.')
+  const bs = normalizeVersionString(b).split('.')
+  const max = Math.max(as.length, bs.length)
+  for (let i = 0; i < max; i++) {
+    const ai = parseInt(as[i] ?? '0', 10) || 0
+    const bi = parseInt(bs[i] ?? '0', 10) || 0
+    if (ai !== bi) return ai - bi
+  }
+  return 0
 }
 
 // Attempt to stop the Vite dev server to clean up the dev console (Windows only)
