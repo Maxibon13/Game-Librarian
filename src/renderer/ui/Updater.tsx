@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Welcome } from './Welcome'
 
 type UpdateState =
   | { phase: 'checking' }
@@ -8,6 +9,7 @@ type UpdateState =
 
 export function Updater({ onReady }: { onReady: () => void }) {
   const [state, setState] = useState<UpdateState>({ phase: 'checking' })
+  const [maybeWelcome, setMaybeWelcome] = useState(false)
   const [appName, setAppName] = useState<string>('Game Librarian')
 
   useEffect(() => {
@@ -26,21 +28,43 @@ export function Updater({ onReady }: { onReady: () => void }) {
           onReady()
           return
         }
-        if (res.updateAvailable) {
+         if (res.updateAvailable) {
           setState({ phase: 'prompt', localVersion: res.localVersion, remoteVersion: res.remoteVersion, repository: res.repository })
         } else {
-          setState({ phase: 'upToDate', localVersion: res.localVersion })
-          await api.initBackend()
-          onReady()
+           setState({ phase: 'upToDate', localVersion: res.localVersion })
+           await api.initBackend()
+           try {
+             const s = await api.getSettings()
+             if (!s?.welcomeSeen) {
+               setMaybeWelcome(true)
+               return
+             }
+           } catch {}
+           onReady()
         }
       } catch (e: any) {
         setState({ phase: 'error', message: String(e?.message || e) })
-        try { await (window as any).electronAPI.initBackend() } catch {}
-        onReady()
+         try { await (window as any).electronAPI.initBackend() } catch {}
+         try {
+           const s = await (window as any).electronAPI.getSettings()
+           if (!s?.welcomeSeen) { setMaybeWelcome(true); return }
+         } catch {}
+         onReady()
       }
     })()
     return () => { cancelled = true }
   }, [onReady])
+
+  if (maybeWelcome) {
+    return <Welcome onContinue={async () => {
+      try {
+        const api = (window as any).electronAPI
+        const s = await api.getSettings()
+        await api.saveSettings({ ...s, welcomeSeen: true })
+      } catch {}
+      onReady()
+    }} />
+  }
 
   return (
     <div className="updater-screen">

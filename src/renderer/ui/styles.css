@@ -211,6 +211,15 @@ body { margin:0; font-family: Inter, system-ui, Arial, sans-serif; background:ra
   pointer-events: none;
 }
 
+/* Welcome screen */
+.welcome-overlay { position: fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index: 2100; backdrop-filter: blur(14px); background: rgba(10,11,14, .45); }
+.welcome-card { width: min(720px, 92vw); padding: 28px; border-radius: 16px; background: linear-gradient(180deg, var(--panel), var(--panel-2)); border:1px solid #262a33; box-shadow: 0 24px 80px rgba(0,0,0,.55); text-align: center; }
+.welcome-title-wrap { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom: 8px }
+.welcome-title-logo { width: 36px; height: 36px; border-radius: 8px }
+.welcome-title { font-size: 26px; font-weight: 900; margin: 0 }
+.welcome-desc { font-size: 15px; opacity: .92; line-height: 1.6; margin: 0 0 18px 0 }
+.welcome-actions { display:flex; justify-content:center }
+
 /* Changelog button (bottom-right) */
 /* moved into header; keep class in case of legacy references */
 .changelog-button { display:none }

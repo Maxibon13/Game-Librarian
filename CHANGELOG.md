@@ -1,5 +1,9 @@
 # Changelog
 
+## Beta 1.3 (v6.3)
+
+- Added welcome page
+
 ## Beta 1.22 (v6.22)
 
 - Added change log styling

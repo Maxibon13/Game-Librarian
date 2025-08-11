@@ -16,6 +16,8 @@ export class SettingsService {
       theme: {
         name: 'dark' // See App.tsx for available presets
       },
+      // Onboarding / first-run flags
+      welcomeSeen: false,
       // UI preferences persisted between sessions
       ui: {
         viewMode: 'large', // 'large' | 'small' | 'list'
