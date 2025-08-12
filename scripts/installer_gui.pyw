@@ -820,10 +820,9 @@ class InstallerGUI:
                 winreg.SetValueEx(k, 'InstallLocation', 0, winreg.REG_SZ, str(target_dir))
                 if icon and Path(icon).exists():
                     winreg.SetValueEx(k, 'DisplayIcon', 0, winreg.REG_SZ, str(icon))
-                # Uninstall command: use pyw to launch our uninstaller GUI
-                uninstaller = target_dir / 'scripts' / 'uninstaller_gui.pyw'
-                pyw = shutil.which('pyw') or 'pyw'
-                uninstall_cmd = f"{pyw} \"{uninstaller}\""
+                # Uninstall command: robust PowerShell runner script
+                runner = self._write_uninstaller_runner_ps1(target_dir)
+                uninstall_cmd = f"powershell -NoProfile -ExecutionPolicy Bypass -File \"{runner}\""
                 winreg.SetValueEx(k, 'UninstallString', 0, winreg.REG_SZ, uninstall_cmd)
                 winreg.SetValueEx(k, 'QuietUninstallString', 0, winreg.REG_SZ, uninstall_cmd)
                 # ARP options
@@ -832,6 +831,33 @@ class InstallerGUI:
             self._emit('[INFO] Registered app in Windows Apps & features.')
         except Exception as e:
             self._emit(f'[WARN] Failed to write uninstall registry entry: {e}')
+
+    def _write_uninstaller_runner_ps1(self, target_dir: Path) -> Path:
+        try:
+            scripts_dir = target_dir / 'scripts'
+            scripts_dir.mkdir(parents=True, exist_ok=True)
+            runner = scripts_dir / 'run_uninstaller.ps1'
+            content = (
+                "$ErrorActionPreference='SilentlyContinue'\n"
+                "$uninstaller = Join-Path $PSScriptRoot 'uninstaller_gui.pyw'\n"
+                "$cands = @()\n"
+                "$c=Get-Command pyw -ErrorAction SilentlyContinue; if($c){$cands += $c.Source}\n"
+                "$c=Get-Command py -ErrorAction SilentlyContinue; if($c){$cands += $c.Source}\n"
+                "$c=Get-Command pythonw -ErrorAction SilentlyContinue; if($c){$cands += $c.Source}\n"
+                "$c=Get-Command python -ErrorAction SilentlyContinue; if($c){$cands += $c.Source}\n"
+                "if($cands.Count -gt 0){\n"
+                "  $cmd=$cands[0];\n"
+                "  $wd = Split-Path -Path $uninstaller -Parent\n"
+                "  Start-Process -FilePath $cmd -ArgumentList \"`\"$uninstaller`\"\" -WindowStyle Hidden -WorkingDirectory $wd; exit 0\n"
+                "}\n"
+                "$wd = Split-Path -Path $uninstaller -Parent\n"
+                "Start-Process -FilePath $uninstaller -WindowStyle Hidden -WorkingDirectory $wd\n"
+            )
+            runner.write_text(content, encoding='utf-8')
+            return runner
+        except Exception:
+            # Fallback: return direct uninstaller path; registry caller may still succeed if python association exists
+            return target_dir / 'scripts' / 'uninstaller_gui.pyw'
 
     def _read_version(self, target_dir: Path) -> str | None:
         try:
