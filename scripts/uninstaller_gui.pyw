@@ -24,6 +24,12 @@ except Exception:  # pragma: no cover
     Image = None  # type: ignore
     ImageTk = None  # type: ignore
 
+# Optional winreg to detect InstallLocation from registry
+try:
+    import winreg  # type: ignore
+except Exception:
+    winreg = None  # type: ignore
+
 
 class UninstallInfoScreen:
     def __init__(self, root: tk.Tk, on_continue, on_cancel):
@@ -119,24 +125,45 @@ class UninstallInfoScreen:
         Label(loc_frame, text='Install Location:', width=16).pack(side='left', anchor='w')
         self.location_var = tk.StringVar()
 
-        # Default to typical install folder or script parent
-        default_dir = (Path(__file__).resolve().parent / '..').resolve()
-        if sys.platform == 'win32':
-            default_dir = Path(os.environ.get('LOCALAPPDATA', str(default_dir))) / 'Game Librarian'
-        self.location_var.set(str(default_dir))
+        # Detect existing installation via registry; fallback to default
+        existing_dir = self._detect_existing_installation()
+        self.existing_detected = existing_dir is not None and Path(existing_dir).exists()
+        if self.existing_detected:
+            self.location_var.set(str(existing_dir))
+        else:
+            default_dir = (Path(__file__).resolve().parent / '..').resolve()
+            if sys.platform == 'win32':
+                default_dir = Path(os.environ.get('LOCALAPPDATA', str(default_dir))) / 'Game Librarian'
+            self.location_var.set(str(default_dir))
 
         if ctk:
-            entry = Entry(loc_frame, textvariable=self.location_var, width=380)
-            entry.pack(side='left', fill='x', expand=True, padx=(0, 6))
-            Button(
+            self.entry = Entry(loc_frame, textvariable=self.location_var, width=380)
+            self.entry.pack(side='left', fill='x', expand=True, padx=(0, 6))
+            self.browse_btn = Button(
                 loc_frame, text='Browse…', command=self._browse_location, width=110,
                 fg_color='transparent', hover_color='#2a3344', border_width=1,
                 border_color='#3a3f46', text_color='#e5e7eb'
-            ).pack(side='left')
+            )
+            self.browse_btn.pack(side='left')
         else:
-            entry = Entry(loc_frame, textvariable=self.location_var, width=54)
-            entry.pack(side='left', fill='x', expand=True, padx=(0, 5))
-            ttk.Button(loc_frame, text='Browse…', command=self._browse_location).pack(side='left')
+            self.entry = Entry(loc_frame, textvariable=self.location_var, width=54)
+            self.entry.pack(side='left', fill='x', expand=True, padx=(0, 5))
+            self.browse_btn = ttk.Button(loc_frame, text='Browse…', command=self._browse_location)
+            self.browse_btn.pack(side='left')
+
+        # If existing install detected, lock the location field and show a note
+        if getattr(self, 'existing_detected', False):
+            try:
+                self.entry.configure(state='disabled')
+            except Exception:
+                pass
+            try:
+                self.browse_btn.configure(state='disabled')
+            except Exception:
+                pass
+            note = Label(self.frame, text='Existing installation detected via registry. The uninstaller will target this location.',
+                         font=('Segoe UI', 10), **({'bg_color': 'transparent'} if ctk else {}))
+            note.pack(anchor='w', pady=(6, 0))
 
         btn_frame = BaseFrame(self.frame)
         btn_frame.pack(fill='x', pady=(12, 0))
@@ -172,6 +199,24 @@ class UninstallInfoScreen:
             'rm_user': bool(self.opt_rm_user.get()),
         }
         self.on_continue(target, opts)
+
+    def _detect_existing_installation(self) -> str | None:
+        # Use Windows uninstall registry entry if available
+        try:
+            if sys.platform == 'win32' and winreg:
+                for root in (winreg.HKEY_CURRENT_USER,):
+                    try:
+                        path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\GameLibrarian"
+                        access = winreg.KEY_READ | getattr(winreg, 'KEY_WOW64_64KEY', 0)
+                        with winreg.OpenKey(root, path, 0, access) as k:
+                            val, _ = winreg.QueryValueEx(k, 'InstallLocation')
+                            if val and Path(val).exists():
+                                return val
+                    except FileNotFoundError:
+                        pass
+        except Exception:
+            pass
+        return None
 
     # ---- CTk switch helper ----
     def _add_ctk_switch(self, parent, text: str, var: tk.BooleanVar):

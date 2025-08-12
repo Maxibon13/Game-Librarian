@@ -1,5 +1,14 @@
 # Changelog
 
+## Beta 1.421 (v6.421)
+- Important Uninstaller Bug Fixs
+  - Now detects registry install location
+
+- First Time Installer Bug Fixes
+  - Auto run not working
+  - Shortcut not being added to desktop
+  - Winreg addition
+
 ## Beta 1.42 (v6.42)
 
 - Added Uninstaller 
