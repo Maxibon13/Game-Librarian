@@ -1,8 +1,17 @@
 # Changelog
 
+## Beta 1.41 (v6.41)
+
+- Installer Bug Fixes 
+  - Installer crashing on start 
+  - Auto run not working, 
+  - Shortcut not being added to desktop
+
+
 ## Beta 1.4 (v6.4)
 
 - Installer Updates 
+  - Ui changes
   - Cleaning up old files from the root folder that arent found in repo
   - does not include folders: [TESTING & MOD]
   - Create shortcut to desktop / startup / search option added
