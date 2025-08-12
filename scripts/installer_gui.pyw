@@ -278,6 +278,7 @@ class InstallerGUI:
         self.proc: subprocess.Popen | None = None
         self.success: bool = False
         self.cancel_requested: bool = False
+        self.target_exe: Path | None = None
 
         # Header with logo and titles
         if not ctk:
@@ -469,7 +470,7 @@ class InstallerGUI:
             self._clean_extraneous(src=repo_root, dst=target_dir, exclude_dirs=all_excludes)
             self._emit('[DEBUG] File sync + cleanup completed.')
 
-            # Shortcuts and optional autorun
+            # Shortcuts (autorun deferred until Finish pressed)
             self._emit('[INFO] Applying selected options …')
             try:
                 target_exe = self._resolve_app_exe(target_dir)
@@ -477,6 +478,8 @@ class InstallerGUI:
                     self._emit(f'[INFO] Detected application binary: {target_exe}')
                 else:
                     self._emit('[WARN] Could not locate application binary to shortcut/autorun.')
+                # Remember detected exe for Finish autorun
+                self.target_exe = target_exe if target_exe and target_exe.exists() else None
                 # Prefer icon from install dir; fall back to repo-relative icon
                 icon_ico = (target_dir / 'src' / 'Icon.ico')
                 if not icon_ico.exists():
@@ -491,16 +494,6 @@ class InstallerGUI:
                         self._create_shortcut(target_exe, self._start_menu_dir() / 'Game Librarian.lnk', icon_ico)
                     if self.options.get('startup'):
                         self._create_shortcut(target_exe, self._startup_dir() / 'Game Librarian.lnk', icon_ico)
-                # Optional auto-run
-                if self.options.get('autorun') and target_exe and target_exe.exists():
-                    try:
-                        if target_exe.suffix.lower() in ('.py', '.pyw'):
-                            subprocess.Popen(['py', str(target_exe)], cwd=str(target_exe.parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        else:
-                            subprocess.Popen([str(target_exe)], cwd=str(target_exe.parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        self._emit('[INFO] Launched application (auto-run).')
-                    except Exception as e:
-                        self._emit(f'[WARN] Failed to auto-run app: {e}')
             except Exception as e:
                 self._emit(f'[WARN] Failed to apply options: {e}')
 
@@ -826,6 +819,17 @@ class InstallerGUI:
             pass
 
     def on_finish(self):
+        # Autorun on Finish if enabled and target exe was detected
+        try:
+            if self.success and self.options.get('autorun') and getattr(self, 'target_exe', None):
+                target_exe: Path = self.target_exe  # type: ignore
+                if target_exe.exists():
+                    if target_exe.suffix.lower() in ('.py', '.pyw'):
+                        subprocess.Popen(['py', str(target_exe)], cwd=str(target_exe.parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    else:
+                        subprocess.Popen([str(target_exe)], cwd=str(target_exe.parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
         self.root.destroy()
 
 
