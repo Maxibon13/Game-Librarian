@@ -12,6 +12,7 @@ export function ThemeSelect({ value, options, onChange }: Props) {
   const [open, setOpen] = React.useState(false)
   const containerRef = React.useRef<HTMLDivElement | null>(null)
   const listRef = React.useRef<HTMLDivElement | null>(null)
+  const [above, setAbove] = React.useState(false)
 
   React.useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -24,6 +25,13 @@ export function ThemeSelect({ value, options, onChange }: Props) {
 
   React.useEffect(() => {
     if (open) {
+      // Flip the menu above if not enough space below
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (rect) {
+        const spaceBelow = window.innerHeight - rect.bottom
+        const spaceAbove = rect.top
+        setAbove(spaceBelow < 240 && spaceAbove > spaceBelow)
+      }
       requestAnimationFrame(() => {
         listRef.current?.querySelector<HTMLElement>('.theme-item')?.focus()
       })
@@ -62,7 +70,7 @@ export function ThemeSelect({ value, options, onChange }: Props) {
         <span className={`chev ${open ? 'up' : ''}`} aria-hidden>▾</span>
       </button>
       {open && (
-        <div ref={listRef} className="theme-menu" role="listbox">
+        <div ref={listRef} className={`theme-menu ${above ? 'above' : ''}`} role="listbox">
           {options.map((opt, i) => (
             <button
               key={opt.value}

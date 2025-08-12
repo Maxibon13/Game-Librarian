@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import type { Game } from './App'
-import hoverSound from '../../sounds/Hover.ogg'
+import hoverSound from '../../sounds/hover.ogg'
 
 type Props = {
   game: Game
@@ -9,16 +9,20 @@ type Props = {
   onOpen?: () => void
   audioEnabled?: boolean
   masterVolume?: number
+  audioProfile?: 'normal' | 'alt'
 }
 
-export function GameCard({ game, onLaunch, onOpen, variant = 'large', audioEnabled = true, masterVolume = 1 }: Props) {
+export function GameCard({ game, onLaunch, onOpen, variant = 'large', audioEnabled = true, masterVolume = 1, audioProfile = 'normal' }: Props) {
   const [hover, setHover] = useState(false)
   const [audioPlayed, setAudioPlayed] = useState(false)
 
   const handleMouseEnter = () => {
     setHover(true)
     if (!audioPlayed && audioEnabled) {
-      const audio = new Audio(hoverSound)
+      const src = audioProfile === 'alt'
+        ? new URL('../../sounds/hover_alt.ogg', import.meta.url).href
+        : hoverSound
+      const audio = new Audio(src)
       const vol = Math.max(0, Math.min(1, masterVolume))
       audio.volume = 0.6 * vol
       audio.play().catch(() => {})

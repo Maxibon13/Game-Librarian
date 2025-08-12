@@ -61,6 +61,38 @@ export function GameMenuOverlay({ game, onClose, onLaunch, onRenamed }: Props) {
           </div>
           <div className="menu-actions">
             <button className="btn btn-primary" onClick={onLaunch}>Launch</button>
+            <button
+              className="btn"
+              onClick={async () => {
+                const p = (game as any).executablePath || (game as any).installDir
+                const lib = (game as any).library
+                try { console.debug('[ManageFiles] Requested path:', p, 'library:', lib) } catch {}
+                let reveal = p
+                try {
+                  if (game.launcher === 'steam' && typeof lib === 'string' && typeof p === 'string') {
+                    const lower = p.toLowerCase()
+                    if (!lower.includes('steamapps')) {
+                      // p might be like Z:\SteamLibrary\common\Game OR just common\Game
+                      // Ensure we anchor it under <lib>\common\<folder>
+                      const tail = lower.includes('common') ? p.substring(lower.indexOf('common') + 'common'.length + 1) : p
+                      const { join } = await import('path')
+                      reveal = join(lib, 'common', tail)
+                    }
+                  }
+                } catch {}
+                try { console.debug('[ManageFiles] Using path:', reveal) } catch {}
+                if (reveal) {
+                  try {
+                    const ok = await (window as any).electronAPI.revealPath(reveal)
+                    try { console.debug('[ManageFiles] Reveal result:', ok) } catch {}
+                  } catch (e) {
+                    try { console.warn('[ManageFiles] Reveal failed:', String(e)) } catch {}
+                  }
+                } else {
+                  try { console.warn('[ManageFiles] No path available on game object') } catch {}
+                }
+              }}
+            >Manage Files</button>
             {editing ? (
               <button className="btn btn-primary" onClick={saveRename}>Save</button>
             ) : (

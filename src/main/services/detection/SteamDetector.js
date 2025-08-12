@@ -28,7 +28,8 @@ export class SteamDetector {
       const games = []
       for (const g of pythonResult.games) {
         const image = g.id && /^\d+$/.test(String(g.id)) && steamPath ? await this.resolveSteamImage(steamPath, String(g.id)) : undefined
-        games.push({ id: g.id, title: g.title, launcher: 'steam', installDir: g.installDir, image })
+        const exe = await this.findLikelyExecutable(g.installDir)
+        games.push({ id: g.id, title: g.title, launcher: 'steam', installDir: g.installDir, library: g.library || null, image, executablePath: exe || undefined })
       }
       this.lastDebug = {
         steamPath: steamPath || null,
@@ -149,9 +150,10 @@ export class SteamDetector {
             const id = appState.appid
             const name = appState.name
             const installDir = appState.installdir
-            const commonDir = path.join(path.dirname(lib), 'common', installDir)
+            const commonDir = path.join(lib, 'common', installDir)
             const image = await this.resolveSteamImage(steamPath, String(id))
-            games.push({ id, title: name, launcher: 'steam', installDir: commonDir, image })
+            const exe = await this.findLikelyExecutable(commonDir)
+            games.push({ id, title: name, launcher: 'steam', installDir: commonDir, image, executablePath: exe || undefined, library: lib })
             this.lastDebug.manifests.push({ lib, file, id, title: name })
           } catch (e) {
             // Fallback to regex like the Python script to extract name
@@ -164,9 +166,10 @@ export class SteamDetector {
                 const id = idMatch ? idMatch[1] : `unknown-${file}`
                 const name = nameMatch[1]
                 const installDir = installMatch[1]
-                const commonDir = path.join(path.dirname(lib), 'common', installDir)
+                const commonDir = path.join(lib, 'common', installDir)
                 const image = idMatch ? await this.resolveSteamImage(steamPath, String(id)) : undefined
-                games.push({ id, title: name, launcher: 'steam', installDir: commonDir, image })
+                const exe = await this.findLikelyExecutable(commonDir)
+                games.push({ id, title: name, launcher: 'steam', installDir: commonDir, image, executablePath: exe || undefined, library: lib })
                 this.lastDebug.manifests.push({ lib, file, id, title: name })
               }
             } catch {}

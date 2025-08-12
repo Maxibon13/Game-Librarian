@@ -1,5 +1,22 @@
 # Changelog
 
+## Beta 2 (v7.0)
+- Added Sound Changer
+  - Alt pack included
+
+- Added Compatability
+  - Xbox apps, GOG and Ubisoft
+
+- Added Hotkeys
+  - Accessable in settings
+
+- Added Additional Settings
+  - Ubisoft and GoG install locations
+  - +Additional locations
+
+- Game Menu Configuartions
+  - You can now find file locations
+
 ## Beta 1.421 (v6.421)
 - Important Uninstaller Bug Fixs
   - Now detects registry install location

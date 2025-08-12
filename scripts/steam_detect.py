@@ -92,7 +92,8 @@ def list_steam_games(libraries):
                         data = f.read()
                     appid, name, installdir = parse_vdf_manifest(data)
                     if name and installdir:
-                        install_path = os.path.join(os.path.dirname(lib), "common", installdir)
+                        # 'lib' points to the steamapps folder; install path lives under steamapps/common/<installdir>
+                        install_path = os.path.join(lib, "common", installdir)
                         games.append({
                             "id": appid or f"unknown-{file}",
                             "title": name,

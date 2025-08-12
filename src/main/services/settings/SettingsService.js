@@ -12,6 +12,14 @@ export class SettingsService {
       epic: {
         manifestDir: ''
       },
+      gog: {
+        manifestDir: '',
+        customLibraries: []
+      },
+      ubisoft: {
+        manifestDir: '',
+        customLibraries: []
+      },
       // Theme preferences (preset themes only)
       theme: {
         name: 'dark' // See App.tsx for available presets
@@ -26,7 +34,8 @@ export class SettingsService {
       // Audio preferences
       audio: {
         enabled: true,
-        masterVolume: 1.0
+        masterVolume: 1.0,
+        profile: 'normal' // 'normal' | 'alt'
       }
     }
   }

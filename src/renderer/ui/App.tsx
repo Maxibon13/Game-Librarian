@@ -1,9 +1,18 @@
 import React, { useEffect, useState } from 'react'
 import { GameCard } from './GameCard'
 import { SessionOverlay } from './SessionOverlay'
-const launchSound = new URL('../../sounds/Launch.ogg', import.meta.url).href
-const openSound = new URL('../../sounds/Open.ogg', import.meta.url).href
-const closeSound = new URL('../../sounds/Close.ogg', import.meta.url).href
+const sounds = {
+  normal: {
+    launch: new URL('../../sounds/launch.ogg', import.meta.url).href,
+    open: new URL('../../sounds/open.ogg', import.meta.url).href,
+    close: new URL('../../sounds/close.ogg', import.meta.url).href
+  },
+  alt: {
+    launch: new URL('../../sounds/launch_alt.ogg', import.meta.url).href,
+    open: new URL('../../sounds/open_alt.ogg', import.meta.url).href,
+    close: new URL('../../sounds/close_alt.ogg', import.meta.url).href
+  }
+} as const
 import { Settings } from './Settings'
 import { SessionEndedCard } from './SessionEndedCard'
 import GameMenuOverlay from './GameMenuOverlay'
@@ -34,6 +43,7 @@ export function App() {
   const [modeAnim, setModeAnim] = useState(false)
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [masterVolume, setMasterVolume] = useState(1)
+  const [audioProfile, setAudioProfile] = useState<'normal' | 'alt'>('normal')
   const [appVersion, setAppVersion] = useState<string | null>(null)
   const [theme, setTheme] = useState<string>('dark')
   const [showChangelog, setShowChangelog] = useState(false)
@@ -81,6 +91,8 @@ export function App() {
         setAudioEnabled(audio.enabled !== false)
         const mv = typeof audio.masterVolume === 'number' ? audio.masterVolume : 1
         setMasterVolume(Math.max(0, Math.min(1, mv)))
+        if (audio.profile === 'alt' || audio.profile === 'normal') setAudioProfile(audio.profile)
+        ;(window as any)._glAudioProfile = (audio.profile === 'alt' || audio.profile === 'normal') ? audio.profile : 'normal'
         // Theme
         const tn = s?.theme?.name || 'dark'
         setTheme(tn)
@@ -350,10 +362,11 @@ export function App() {
                   <GameCard
                     key={`${g.launcher}-${g.id}`}
                     game={g}
-                    onLaunch={() => onLaunch(g, setStarting, audioEnabled, masterVolume)}
+                    onLaunch={() => onLaunch(g, setStarting, audioEnabled, masterVolume, audioProfile)}
                     audioEnabled={audioEnabled}
                     masterVolume={masterVolume}
-                    onOpen={() => onOpenMenu(g, setMenu, audioEnabled, masterVolume)}
+                     audioProfile={audioProfile}
+                    onOpen={() => onOpenMenu(g, setMenu, audioEnabled, masterVolume, audioProfile)}
                     variant={viewMode}
                   />
                 ))}
@@ -361,12 +374,21 @@ export function App() {
             ) : (
               <Settings
                 audio={{ enabled: audioEnabled, masterVolume }}
+                audioProfile={audioProfile}
                 onAudioChange={async (next) => {
                   setAudioEnabled(next.enabled)
                   setMasterVolume(next.masterVolume)
                   try {
                     const current = await (window as any).electronAPI.getSettings()
-                    await (window as any).electronAPI.saveSettings({ ...current, audio: next })
+                    await (window as any).electronAPI.saveSettings({ ...current, audio: { ...(current?.audio||{}), ...next, profile: audioProfile } })
+                  } catch {}
+                }}
+                onAudioProfileChange={async (profile) => {
+                  setAudioProfile(profile)
+                  ;(window as any)._glAudioProfile = profile
+                  try {
+                    const current = await (window as any).electronAPI.getSettings()
+                    await (window as any).electronAPI.saveSettings({ ...current, audio: { ...(current?.audio||{}), enabled: audioEnabled, masterVolume, profile } })
                   } catch {}
                 }}
                 onSaved={async () => {
@@ -407,8 +429,8 @@ export function App() {
       {menu && (
         <GameMenuOverlay
           game={menu.game}
-          onClose={() => onCloseMenu(setMenu, audioEnabled, masterVolume)}
-          onLaunch={() => { onLaunch(menu.game, setStarting, audioEnabled, masterVolume); onCloseMenu(setMenu, audioEnabled, masterVolume) }}
+          onClose={() => onCloseMenu(setMenu, audioEnabled, masterVolume, audioProfile)}
+          onLaunch={() => { onLaunch(menu.game, setStarting, audioEnabled, masterVolume, audioProfile); onCloseMenu(setMenu, audioEnabled, masterVolume, audioProfile) }}
         />
       )}
 
@@ -422,9 +444,16 @@ export function App() {
   )
 }
 
-function onLaunch(game: Game, setStarting: (v: { game: Game }) => void, audioEnabled: boolean, masterVolume: number) {
+function onLaunch(
+  game: Game,
+  setStarting: (v: { game: Game }) => void,
+  audioEnabled: boolean,
+  masterVolume: number,
+  profile: 'normal' | 'alt'
+) {
   if (audioEnabled) {
-    const audio = new Audio(launchSound)
+    const src = sounds[profile]?.launch || sounds.normal.launch
+    const audio = new Audio(src)
     audio.volume = 0.6 * Math.max(0, Math.min(1, masterVolume))
     audio.preload = 'auto'
     audio.play().catch(() => {})
@@ -433,10 +462,17 @@ function onLaunch(game: Game, setStarting: (v: { game: Game }) => void, audioEna
   return (window as any).electronAPI.launchGame(game)
 }
 
-function onOpenMenu(game: Game, setMenu: (v: { game: Game } | null) => void, audioEnabled: boolean, masterVolume: number) {
+function onOpenMenu(
+  game: Game,
+  setMenu: (v: { game: Game } | null) => void,
+  audioEnabled: boolean,
+  masterVolume: number,
+  profile: 'normal' | 'alt'
+) {
   try {
     if (audioEnabled) {
-      const audio = new Audio(openSound)
+      const src = profile === 'alt' ? sounds.alt.open : sounds.normal.open
+      const audio = new Audio(src)
       audio.volume = 0.6 * Math.max(0, Math.min(1, masterVolume))
       audio.play().catch(() => {})
     }
@@ -444,10 +480,16 @@ function onOpenMenu(game: Game, setMenu: (v: { game: Game } | null) => void, aud
   setMenu({ game })
 }
 
-function onCloseMenu(setMenu: (v: { game: Game } | null) => void, audioEnabled?: boolean, masterVolume?: number) {
+function onCloseMenu(
+  setMenu: (v: { game: Game } | null) => void,
+  audioEnabled?: boolean,
+  masterVolume?: number,
+  profile: 'normal' | 'alt' = 'normal'
+) {
   try {
     if (audioEnabled) {
-      const audio = new Audio(closeSound)
+      const src = profile === 'alt' ? sounds.alt.close : sounds.normal.close
+      const audio = new Audio(src)
       const mv = Math.max(0, Math.min(1, masterVolume ?? 1))
       audio.volume = 0.6 * mv
       audio.play().catch(() => {})

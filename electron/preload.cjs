@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   debugSteam: () => ipcRenderer.invoke('debug:steam'),
   forceQuit: (game) => ipcRenderer.invoke('game:forceQuit', game),
   openPath: (p) => ipcRenderer.invoke('os:openPath', p),
+  revealPath: (p) => ipcRenderer.invoke('os:revealPath', p),
+  revealSteamGame: (args) => ipcRenderer.invoke('steam:revealGameFolder', args),
   pickDirectory: () => ipcRenderer.invoke('dialog:pickDirectory'),
   onSessionStart: (handler) => ipcRenderer.on('game:session-started', (_e, payload) => handler(payload)),
   onSessionEnd: (handler) => ipcRenderer.on('game:session-ended', (_e, payload) => handler(payload)),

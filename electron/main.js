@@ -206,6 +206,11 @@ async function registerIpcAndServices() {
   })
 
   ipcMain.handle('game:launch', async (_e, game) => {
+    // Launch Xbox/Microsoft Store apps by AUMID when available
+    if (game?.launcher === 'xbox' && game?.aumid) {
+      try { await shell.openExternal(`shell:AppsFolder/${game.aumid}`) } catch {}
+      return true
+    }
     await playtimeService.launchGameAndTrack(game)
     return true
   })
@@ -239,6 +244,67 @@ async function registerIpcAndServices() {
     } catch {
       return false
     }
+  })
+
+  ipcMain.handle('os:revealPath', async (_e, p) => {
+    try {
+      const input = String(p || '').trim()
+      try { console.log('[RevealPath] input:', input) } catch {}
+      if (!input) return false
+      // Strip quotes and convert file URLs
+      let cleaned = input.replace(/^"|"$/g, '')
+      if (/^file:\/\//i.test(cleaned)) {
+        try {
+          const u = new URL(cleaned)
+          cleaned = u.pathname
+          if (process.platform === 'win32' && cleaned.startsWith('/')) cleaned = cleaned.slice(1)
+          cleaned = decodeURIComponent(cleaned)
+        } catch {}
+      }
+      const normalized = path.resolve(cleaned)
+      try { console.log('[RevealPath] normalized:', normalized) } catch {}
+      try {
+        const stats = await fs.stat(normalized)
+        if (stats.isDirectory()) {
+          try { console.log('[RevealPath] open directory') } catch {}
+          await shell.openPath(normalized)
+          return true
+        }
+        try { console.log('[RevealPath] reveal file in folder') } catch {}
+        shell.showItemInFolder(normalized)
+        return true
+      } catch {
+        const parent = path.dirname(normalized)
+        if (parent && parent !== normalized && fsSync.existsSync(parent)) {
+          try { console.log('[RevealPath] fallback to parent dir:', parent) } catch {}
+          await shell.openPath(parent)
+          return true
+        }
+        try { console.warn('[RevealPath] path not found:', normalized) } catch {}
+        return false
+      }
+    } catch { return false }
+  })
+
+  ipcMain.handle('steam:revealGameFolder', async (_e, { libraryDir, title }) => {
+    try {
+      const lib = String(libraryDir || '').trim()
+      const game = String(title || '').trim()
+      if (!lib || !game) return false
+      const commonDir = path.join(lib, 'steamapps', 'common')
+      try {
+        const entries = await fs.readdir(commonDir)
+        // find best match (case-insensitive contains)
+        const lower = game.toLowerCase()
+        let match = entries.find((n) => n.toLowerCase() === lower)
+        if (!match) match = entries.find((n) => n.toLowerCase().includes(lower))
+        if (!match) return false
+        const target = path.join(commonDir, match)
+        try { console.log('[SteamReveal] target:', target) } catch {}
+        await shell.openPath(target)
+        return true
+      } catch { return false }
+    } catch { return false }
   })
 
   ipcMain.handle('dialog:pickDirectory', async () => {
