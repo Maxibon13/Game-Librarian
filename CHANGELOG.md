@@ -1,5 +1,14 @@
 # Changelog
 
+## Beta 1.42 (v6.42)
+
+- Added Uninstaller 
+  - Winreg compatibility [will show up in installed apps in windows settings]
+
+- Installer changes
+  - Added installation detection [will not create 2 copies]
+  - Python module validation 
+
 ## Beta 1.41 (v6.41)
 
 - Installer Bug Fixes 

@@ -11,6 +11,12 @@ import urllib.request
 import socket
 import re
 from pathlib import Path
+import importlib
+import json
+try:
+    import winreg  # type: ignore
+except Exception:
+    winreg = None  # type: ignore
 
 import tkinter as tk
 from tkinter import ttk
@@ -164,23 +170,46 @@ class InfoScreen:
         Label(loc_frame, text='Install Location:', width=16).pack(side='left', anchor='w')
         self.location_var = tk.StringVar()
 
-        # Default to current script directory's parent (existing behavior)
-        script_dir = Path(__file__).resolve().parent
-        default_dir = (script_dir / '..').resolve()
-        self.location_var.set(str(default_dir))
+        # Detect existing installation via registry; fallback to default
+        existing_dir = self._detect_existing_installation()
+        self.existing_detected = existing_dir is not None and Path(existing_dir).exists()
+        if self.existing_detected:
+            self.location_var.set(str(existing_dir))
+        else:
+            # Default to current script directory's parent (existing behavior)
+            script_dir = Path(__file__).resolve().parent
+            default_dir = (script_dir / '..').resolve()
+            self.location_var.set(str(default_dir))
 
         if ctk:
-            entry = Entry(loc_frame, textvariable=self.location_var, width=380)
-            entry.pack(side='left', fill='x', expand=True, padx=(0, 6))
-            Button(
+            self.entry = Entry(loc_frame, textvariable=self.location_var, width=380)
+            self.entry.pack(side='left', fill='x', expand=True, padx=(0, 6))
+            self.browse_btn = Button(
                 loc_frame, text='Browse…', command=self._browse_location, width=110,
                 fg_color='transparent', hover_color='#2a3344', border_width=1,
                 border_color='#3a3f46', text_color='#e5e7eb'
-            ).pack(side='left')
+            )
+            self.browse_btn.pack(side='left')
         else:
-            entry = Entry(loc_frame, textvariable=self.location_var, width=54)
-            entry.pack(side='left', fill='x', expand=True, padx=(0, 5))
-            ttk.Button(loc_frame, text='Browse…', command=self._browse_location).pack(side='left')
+            self.entry = Entry(loc_frame, textvariable=self.location_var, width=54)
+            self.entry.pack(side='left', fill='x', expand=True, padx=(0, 5))
+            self.browse_btn = ttk.Button(loc_frame, text='Browse…', command=self._browse_location)
+            self.browse_btn.pack(side='left')
+
+        # If existing install detected, lock the location field and show a note
+        if self.existing_detected:
+            try:
+                self.entry.configure(state='disabled')
+            except Exception:
+                pass
+            try:
+                self.browse_btn.configure(state='disabled')
+            except Exception:
+                pass
+            note = Label(self.frame, text='Existing installation detected. The installer will update it in place.',
+                         font=('Segoe UI', 10),
+                         **({'bg_color': 'transparent'} if ctk else {}))
+            note.pack(anchor='w', pady=(6, 0))
 
         btn_frame = BaseFrame(self.frame)
         btn_frame.pack(fill='x', pady=(12, 0))
@@ -213,7 +242,30 @@ class InfoScreen:
             'search': bool(self.opt_search.get()),
             'autorun': bool(self.opt_autorun.get()),
         }
+        # If existing install detected, always overwrite that location
+        if getattr(self, 'existing_detected', False):
+            detected = self._detect_existing_installation()
+            if detected:
+                target = Path(detected)
         self.on_continue(target, opts)
+
+    def _detect_existing_installation(self) -> str | None:
+        # Use Windows uninstall registry entry if available
+        try:
+            if sys.platform == 'win32' and winreg:
+                for root in (winreg.HKEY_CURRENT_USER,):
+                    try:
+                        path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\GameLibrarian"
+                        access = winreg.KEY_READ | getattr(winreg, 'KEY_WOW64_64KEY', 0)
+                        with winreg.OpenKey(root, path, 0, access) as k:
+                            val, _ = winreg.QueryValueEx(k, 'InstallLocation')
+                            if val and Path(val).exists():
+                                return val
+                    except FileNotFoundError:
+                        pass
+        except Exception:
+            pass
+        return None
 
     # ---- CTk switch helpers ----
     def _add_ctk_switch(self, parent, text: str, var: tk.BooleanVar):
@@ -418,6 +470,13 @@ class InstallerGUI:
             self._fail('Python 3.10+ is required and could not be installed automatically.')
             return
 
+        # Ensure optional/required Python modules
+        self.status_var.set('Checking required Python modules …')
+        try:
+            self._ensure_python_modules({'customtkinter': 'customtkinter'})
+        except Exception:
+            pass
+
         tmp_base = Path(tempfile.gettempdir()) / 'GameLibrarian_update'
         tmp_base.mkdir(parents=True, exist_ok=True)
         tmp_dir = Path(tempfile.mkdtemp(prefix='GameLibrarian_', dir=str(tmp_base)))
@@ -494,6 +553,11 @@ class InstallerGUI:
                         self._create_shortcut(target_exe, self._start_menu_dir() / 'Game Librarian.lnk', icon_ico)
                     if self.options.get('startup'):
                         self._create_shortcut(target_exe, self._startup_dir() / 'Game Librarian.lnk', icon_ico)
+                # Register in Windows Apps list (Add/Remove Programs)
+                try:
+                    self._register_uninstall_entry(target_dir, self.target_exe or target_exe, icon_ico if icon_ico.exists() else None)
+                except Exception as e:
+                    self._emit(f'[WARN] Failed to register in Apps list: {e}')
             except Exception as e:
                 self._emit(f'[WARN] Failed to apply options: {e}')
 
@@ -645,6 +709,39 @@ class InstallerGUI:
 
         return False
 
+    def _ensure_python_modules(self, module_to_pip: dict[str, str]):
+        """Ensure specified Python modules are importable; attempt pip installation if missing.
+
+        module_to_pip maps import name -> pip package name.
+        This is best-effort and non-fatal; logs progress to the UI.
+        """
+        for mod, pkg in module_to_pip.items():
+            try:
+                importlib.import_module(mod)
+                self._emit(f"[INFO] Python module available: {mod}")
+                continue
+            except Exception:
+                self._emit(f"[INFO] Python module missing: {mod}. Attempting installation via pip …")
+            # Try py -m pip first on Windows; fall back to python -m pip
+            cmds: list[list[str]] = []
+            if shutil.which('py'):
+                cmds.append(['py', '-m', 'pip', 'install', '--upgrade', pkg])
+            if shutil.which('python'):
+                cmds.append(['python', '-m', 'pip', 'install', '--upgrade', pkg])
+            # Last resort plain pip
+            if shutil.which('pip'):
+                cmds.append(['pip', 'install', '--upgrade', pkg])
+            for cmd in cmds:
+                if self._run_and_stream(cmd, cwd=None, env=os.environ.copy()):
+                    try:
+                        importlib.import_module(mod)
+                        self._emit(f"[INFO] Installed Python module: {mod}")
+                        break
+                    except Exception:
+                        continue
+            else:
+                self._emit(f"[WARN] Could not install Python module: {mod}. Proceeding without it.")
+
     def _run_and_stream(self, args, cwd=None, env=None) -> bool:
         try:
             self._emit('[CMD] ' + ' '.join([str(a) for a in args]))
@@ -778,6 +875,44 @@ class InstallerGUI:
             self._emit(f'[INFO] Created shortcut: {lnk_path}')
         except Exception as e:
             self._emit(f'[WARN] Shortcut creation failed: {e}')
+
+    def _register_uninstall_entry(self, target_dir: Path, target_exe: Path | None, icon: Path | None):
+        if sys.platform != 'win32' or not winreg:
+            return
+        app_key = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\GameLibrarian"
+        try:
+            access = winreg.KEY_WRITE | getattr(winreg, 'KEY_WOW64_64KEY', 0)
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, app_key, 0, access) as k:
+                # Basic properties
+                winreg.SetValueEx(k, 'DisplayName', 0, winreg.REG_SZ, 'Game Librarian')
+                winreg.SetValueEx(k, 'Publisher', 0, winreg.REG_SZ, 'Game Librarian')
+                version = self._read_version(target_dir) or '1.0.0'
+                winreg.SetValueEx(k, 'DisplayVersion', 0, winreg.REG_SZ, version)
+                winreg.SetValueEx(k, 'InstallLocation', 0, winreg.REG_SZ, str(target_dir))
+                if icon and Path(icon).exists():
+                    winreg.SetValueEx(k, 'DisplayIcon', 0, winreg.REG_SZ, str(icon))
+                # Uninstall command: use pyw to launch our uninstaller GUI
+                uninstaller = target_dir / 'scripts' / 'uninstaller_gui.pyw'
+                pyw = shutil.which('pyw') or 'pyw'
+                uninstall_cmd = f"{pyw} \"{uninstaller}\""
+                winreg.SetValueEx(k, 'UninstallString', 0, winreg.REG_SZ, uninstall_cmd)
+                winreg.SetValueEx(k, 'QuietUninstallString', 0, winreg.REG_SZ, uninstall_cmd)
+                # ARP options
+                winreg.SetValueEx(k, 'NoModify', 0, winreg.REG_DWORD, 1)
+                winreg.SetValueEx(k, 'NoRepair', 0, winreg.REG_DWORD, 1)
+            self._emit('[INFO] Registered app in Windows Apps & features.')
+        except Exception as e:
+            self._emit(f'[WARN] Failed to write uninstall registry entry: {e}')
+
+    def _read_version(self, target_dir: Path) -> str | None:
+        try:
+            vfile = target_dir / 'Version.Json'
+            if vfile.exists():
+                data = json.loads(vfile.read_text(encoding='utf-8', errors='ignore'))
+                return str(data.get('version') or data.get('Version') or '') or None
+        except Exception:
+            return None
+        return None
 
     # -------------- UI loop helpers --------------
     def drain_output_queue(self):
