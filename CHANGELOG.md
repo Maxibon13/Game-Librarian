@@ -4,9 +4,8 @@
 
 - Installer Bug Fixes 
   - Installer crashing on start 
-  - Auto run not working, 
+  - Auto run not working
   - Shortcut not being added to desktop
-
 
 ## Beta 1.4 (v6.4)
 
