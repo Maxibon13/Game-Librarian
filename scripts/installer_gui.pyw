@@ -62,23 +62,7 @@ class InfoScreen:
         else:
             _apply_styles(self.root)
 
-        # Icon
-        try:
-            icon_candidates = [
-                Path(__file__).resolve().parent.parent / 'src' / 'Icon128x128.ico',
-                Path(__file__).resolve().parent.parent / 'src' / 'Icon.ico',
-                Path(__file__).resolve().parent / 'Icon128x128.ico',
-                Path(__file__).resolve().parent / 'Icon.ico',
-            ]
-            for ico in icon_candidates:
-                if ico.exists():
-                    try:
-                        self.root.iconbitmap(default=str(ico))
-                        break
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+        # (Logo removed) Do not set a window icon
 
         self.frame = BaseFrame(root)
         if ctk:
@@ -95,35 +79,7 @@ class InfoScreen:
             except Exception:
                 pass
         header.pack(fill='x', pady=(0, 16))
-        # Logo 64x64 next to title
-        self._header_img = None
-        try:
-            png_candidates = [
-                Path(__file__).resolve().parent.parent / 'src' / 'Icon.png',
-                Path(__file__).resolve().parent / 'Icon.png',
-            ]
-            for p in png_candidates:
-                if not p.exists():
-                    continue
-                if ctk and Image is not None:
-                    img = Image.open(p)
-                    self._header_img = ctk.CTkImage(light_image=img, dark_image=img, size=(64, 64))
-                    break
-                elif Image is not None and ImageTk is not None:
-                    img = Image.open(p).resize((64, 64))
-                    self._header_img = ImageTk.PhotoImage(img)
-                    break
-                else:
-                    _img = tk.PhotoImage(file=str(p))
-                    self._header_img = _img
-                    break
-        except Exception:
-            self._header_img = None
-        if self._header_img is not None:
-            if ctk:
-                Label(header, image=self._header_img, text='', bg_color='transparent').pack(side='left', padx=(0, 10))
-            else:
-                ttk.Label(header, image=self._header_img, text='').pack(side='left', padx=(0, 10))
+        # (Logo removed) No header image
         title_col = BaseFrame(header)
         if ctk:
             try:
@@ -339,34 +295,7 @@ class InstallerGUI:
         HeaderLabel = ctk.CTkLabel if ctk else ttk.Label
         header = BaseFrame(self.root, **({'fg_color': 'transparent'} if ctk else {'style': 'GL.Header.TFrame'}))
         header.pack(fill='x', padx=12, pady=(12, 8))
-        self._header_img = None
-        try:
-            png_candidates = [
-                Path(__file__).resolve().parent.parent / 'src' / 'Icon.png',
-                Path(__file__).resolve().parent / 'Icon.png',
-            ]
-            for p in png_candidates:
-                if not p.exists():
-                    continue
-                if ctk and Image is not None:
-                    img = Image.open(p)
-                    self._header_img = ctk.CTkImage(light_image=img, dark_image=img, size=(64, 64))
-                    break
-                elif Image is not None and ImageTk is not None:
-                    img = Image.open(p).resize((64, 64))
-                    self._header_img = ImageTk.PhotoImage(img)
-                    break
-                else:
-                    _img = tk.PhotoImage(file=str(p))
-                    self._header_img = _img
-                    break
-        except Exception:
-            self._header_img = None
-        if self._header_img is not None:
-            if ctk:
-                HeaderLabel(header, image=self._header_img, text='', bg_color='transparent').pack(side='left', padx=(0, 10))
-            else:
-                ttk.Label(header, image=self._header_img, text='').pack(side='left', padx=(0, 10))
+        # (Logo removed) No header image
         title_col = BaseFrame(header, **({'fg_color': 'transparent'} if ctk else {'style': 'GL.Header.TFrame'}))
         title_col.pack(side='left')
         if ctk:
