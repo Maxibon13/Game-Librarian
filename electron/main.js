@@ -605,20 +605,26 @@ app.whenReady().then(async () => {
       const isDev = !app.isPackaged
       const base = isDev ? process.cwd() : process.resourcesPath
       const scriptDir = path.join(base, 'scripts')
-      const pyGuiCandidates = [
-        path.join(scriptDir, 'installer_gui.pyw'),
-        path.join(scriptDir, 'installer_gui.py')
-      ]
-      const pyGui = pyGuiCandidates.find((p) => {
-        try { return fsSync.existsSync(p) } catch { return false }
-      })
-      const installer = path.join(scriptDir, 'WinInstaller.bat')
+      const exeInstaller = path.join(scriptDir, 'Installer.exe')
+      const pyGuiCandidates = [ path.join(scriptDir, 'installer_gui.pyw'), path.join(scriptDir, 'installer_gui.py') ]
+      const pyGui = pyGuiCandidates.find((p) => { try { return fsSync.existsSync(p) } catch { return false } })
+      const installerBat = path.join(scriptDir, 'WinInstaller.bat')
       const env = { ...process.env }
       const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
       env.INSTALL_DIR = desired
       // Prefer Python GUI if available; fallback to batch
       let child
-      if (pyGui) {
+      if (fsSync.existsSync(exeInstaller)) {
+        try {
+          child = spawn('cmd.exe', ['/c', 'start', '""', 'Installer.exe'], {
+            cwd: scriptDir,
+            env: { ...env, GL_LAUNCHED_FROM_APP: '1' },
+            detached: true,
+            windowsHide: false,
+            stdio: 'ignore'
+          })
+        } catch {}
+      } else if (pyGui) {
         // Launch via 'start' so the GUI is fully detached from the Electron process group.
         // This avoids premature termination when the app quits right after spawning.
         try {
@@ -651,7 +657,7 @@ app.whenReady().then(async () => {
         }
       } else {
         // Verify batch exists, then launch
-        try { if (!fsSync.existsSync(installer)) throw new Error('Installer not found at ' + installer) } catch (e) { return { ok: false, error: String(e) } }
+        try { if (!fsSync.existsSync(installerBat)) throw new Error('Installer not found at ' + installerBat) } catch (e) { return { ok: false, error: String(e) } }
         child = spawn('cmd.exe', ['/c', 'start', '""', 'WinInstaller.bat'], {
           cwd: scriptDir,
           env: { ...env, GL_LAUNCHED_FROM_APP: '1' },

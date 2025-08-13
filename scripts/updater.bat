@@ -45,12 +45,16 @@ if "%UPDATE_AVAILABLE%"=="1" (
   if not exist "%INSTALL_DIR%" (
     mkdir "%INSTALL_DIR%" >nul 2>nul
   )
-  echo [INFO] Installing/updating into "%INSTALL_DIR%" using installer GUI if available or scripts/WinInstaller.bat ...
+  echo [INFO] Installing/updating into "%INSTALL_DIR%" using installer executable/GUI when available ...
   set "_OLD_CD=%CD%"
   pushd "%SCRIPT_DIR%" >nul
   REM Pass INSTALL_DIR to installer so it installs into desired root
   set "INSTALL_DIR=%INSTALL_DIR%"
-  if exist "%SCRIPT_DIR%installer_gui.pyw" (
+  if exist "%SCRIPT_DIR%Installer.exe" (
+    echo [INFO] Launching Installer.exe
+    start "Installer" /b "%SCRIPT_DIR%Installer.exe"
+    set "ERR=%ERRORLEVEL%"
+  ) else if exist "%SCRIPT_DIR%installer_gui.pyw" (
     echo [INFO] Launching Python installer GUI (installer_gui.pyw)
     start "Installer" cmd /c "py -3 \"%SCRIPT_DIR%installer_gui.pyw\""
     set "ERR=%ERRORLEVEL%"
@@ -63,7 +67,7 @@ if "%UPDATE_AVAILABLE%"=="1" (
     call cmd /c "%SCRIPT_DIR%WinInstaller.bat"
     set "ERR=%ERRORLEVEL%"
   ) else (
-    echo [ERROR] No installer found (installer_gui.pyw/installer_gui.py/WinInstaller.bat)
+    echo [ERROR] No installer found (Installer.exe/installer_gui.pyw/installer_gui.py/WinInstaller.bat)
     set "ERR=1"
   )
   popd >nul
