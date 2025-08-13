@@ -59,6 +59,18 @@ export function GameMenuOverlay({ game, onClose, onLaunch, onRenamed }: Props) {
             <span className="meta-chip time">{formatMinutes(game.playtimeMinutes ?? 0)}</span>
             <span className="meta-chip launcher">{game.launcher}</span>
           </div>
+          {String(game.title || '').toLowerCase().includes('launcher') && (
+            <div style={{
+              margin: '12px 0 4px',
+              padding: '8px 10px',
+              background: 'rgba(255, 184, 0, 0.08)',
+              border: '1px solid rgba(255, 184, 0, 0.25)',
+              borderRadius: 6,
+              color: 'var(--muted)'
+            }}>
+              This game may not record correctly as it is a launcher.
+            </div>
+          )}
           <div className="menu-actions">
             <button className="btn btn-primary" onClick={onLaunch}>Launch</button>
             <button

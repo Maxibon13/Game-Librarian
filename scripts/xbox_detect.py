@@ -75,6 +75,15 @@ def ps_get_startapps():
         return []
 
 
+def _norm(s: str) -> str:
+    s = (s or "").casefold()
+    s = re.sub(r"\s*\(windows\s*mixed\s*reality\)\s*$", "", s)
+    s = s.replace("microsoft ", "").replace("windows ", "")
+    s = re.sub(r"[^\w\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
 def prettify_title(raw: str) -> str:
     s = raw or ''
     s = re.sub(r"\s*\(Windows\s*Mixed\s*Reality\)\s*$", "", s, flags=re.I)
@@ -112,6 +121,7 @@ def main():
     apps = ps_get_startapps()
     # Build lookups for AUMID by PFN and by fuzzy name
     aumid_by_pfn = {}
+    aumid_by_name = {}
     for a in apps:
         name = str(a.get('Name') or '')
         appid = str(a.get('AppID') or '')
@@ -119,6 +129,9 @@ def main():
         p = appid.split('!')[0] if '!' in appid else ''
         if p:
             aumid_by_pfn.setdefault(p.lower(), appid)
+        nkey = _norm(name)
+        if nkey:
+            aumid_by_name.setdefault(nkey, appid)
 
     results = []
     # Include games installed under C:\XboxGames (excluding GameSave)
@@ -140,6 +153,17 @@ def main():
                         aumid = aumid_by_pfn.get(pfn.lower())
                         if aumid:
                             break
+                # Fallback: match by friendly name using StartApps
+                if not aumid:
+                    tkey = _norm(title)
+                    if tkey in aumid_by_name:
+                        aumid = aumid_by_name[tkey]
+                    else:
+                        # relaxed startswith/contains
+                        for k, v in aumid_by_name.items():
+                            if k.startswith(tkey) or tkey.startswith(k) or (tkey and k and tkey in k):
+                                aumid = v
+                                break
                 image = find_store_logo(entry) or None
                 results.append({
                     'id': title,
@@ -171,6 +195,15 @@ def main():
             include = ('xboxgames' in install_dir.lower()) or bool(aumid)
         if not include:
             continue
+        if not aumid and title:
+            tkey = _norm(title)
+            if tkey in aumid_by_name:
+                aumid = aumid_by_name[tkey]
+            else:
+                for k, v in aumid_by_name.items():
+                    if k.startswith(tkey) or tkey.startswith(k) or (tkey and k and tkey in k):
+                        aumid = v
+                        break
         img = find_store_logo(Path(install_dir)) or None
         results.append({
             'id': pfn or g.get('id') or title,

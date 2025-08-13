@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { spawnSync, spawn } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
@@ -11,7 +11,15 @@ export class UbisoftDetector {
     // Prefer Python detector for better accuracy
     const py = await this.tryPythonDetector(settings)
     if (py && Array.isArray(py.games) && py.games.length) {
-      return py.games.map((g) => ({ id: g.id, title: g.title, launcher: 'ubisoft', installDir: g.installDir, executablePath: g.executablePath || undefined, image: g.image }))
+      const baseGames = py.games.map((g) => ({ id: g.id, title: g.title, launcher: 'ubisoft', installDir: g.installDir, executablePath: g.executablePath || undefined, image: g.image }))
+      const withFallback = await Promise.all(baseGames.map(async (g) => {
+        if (g.image) return g
+        try {
+          const steamImg = await this.trySteamCommunityImage(g.title)
+          return steamImg ? { ...g, image: steamImg } : g
+        } catch { return g }
+      }))
+      return withFallback
     }
     const games = []
     const regInstalls = []
@@ -80,7 +88,15 @@ export class UbisoftDetector {
         } catch {}
       }
     } catch {}
-    return games
+    // Attach Steam community image fallback where local image is missing
+    const results = await Promise.all(games.map(async (g) => {
+      if (g.image) return g
+      try {
+        const steamImg = await this.trySteamCommunityImage(g.title)
+        return steamImg ? { ...g, image: steamImg } : g
+      } catch { return g }
+    }))
+    return results
   }
 
   async findLikelyExecutable(folderPath) {
@@ -145,6 +161,37 @@ export class UbisoftDetector {
         })
       })
     } catch { return null }
+  }
+
+  async trySteamCommunityImage(gameTitle) {
+    try {
+      const base = (await import('electron')).app?.isPackaged ? process.resourcesPath : process.cwd()
+      const scriptPath = path.join(base, 'scripts', 'SteamApi_Search.py')
+      const candidates = [
+        ['python', [scriptPath, '--game', gameTitle]],
+        ['py', [scriptPath, '--game', gameTitle]]
+      ]
+      for (const [cmd, args] of candidates) {
+        try {
+          const out = await new Promise((resolve, reject) => {
+            const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+            let stdout = ''
+            let stderr = ''
+            p.stdout.on('data', (d) => (stdout += d.toString()))
+            p.stderr.on('data', (d) => (stderr += d.toString()))
+            p.on('error', reject)
+            p.on('close', (code) => {
+              if (code === 0 && stdout) resolve(stdout)
+              else reject(new Error(stderr || `python exited ${code}`))
+            })
+          })
+          const parsed = JSON.parse(out)
+          const url = parsed && parsed.imageUrl
+          if (url && typeof url === 'string' && url.startsWith('http')) return url
+        } catch {}
+      }
+    } catch {}
+    return undefined
   }
 }
 

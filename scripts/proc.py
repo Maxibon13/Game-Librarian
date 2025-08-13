@@ -122,7 +122,7 @@ def _evaluate_match(proc, f):
         reasons.append('exec-under-installDir')
     if title_match:
         reasons.append('title-match')
-    if f['parentPid'] and isinstance(ppid, int) and int(f['parentPid']) == int(ppid):
+    if f.get('parentPid') and isinstance(ppid, int) and int(f['parentPid']) == int(ppid):
         reasons.append('parent-match')
 
     strong = exact_exec or image_match or title_match
@@ -204,7 +204,8 @@ def action_find(filters):
     # Sort by score descending and return top set (cap to avoid noise)
     candidates.sort(key=lambda x: x['score'], reverse=True)
     top = candidates[:12]
-    out_pids = [c['pid'] for c in top if c['score'] > 0]
+    # For UWP/Xbox titles often the executable is a UWP host; relax threshold slightly
+    out_pids = [c['pid'] for c in top if c['score'] >= 10]
     return { 'ok': True, 'pids': out_pids, 'matches': top, 'ts': time.time() }
 
 

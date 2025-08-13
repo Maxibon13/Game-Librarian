@@ -17,8 +17,10 @@ export class PlaytimeService {
 
   async launchGameAndTrack(game) {
     const command = this.buildLaunchCommand(game)
+    try { console.log('[PlaytimeDetector] launching', { launcher: game.launcher, title: game.title, id: game.id, command }) } catch {}
     const startedAt = Date.now()
     const child = spawn(command.command, command.args, { detached: true, stdio: 'ignore', shell: command.shell ?? false })
+    try { console.log('[PlaytimeDetector] spawn', { pid: child?.pid, parentPid: process.pid }) } catch {}
     child.unref()
     this.running.set(`${game.launcher}:${game.id}`, { start: startedAt, proc: child, pids: [], parentPid: child.pid })
     // Only consider child exit as session end if we launched the game's actual executable directly.
@@ -84,6 +86,16 @@ export class PlaytimeService {
     if (game.launcher === 'roblox') {
       if (game.executablePath) return { command: game.executablePath, args: [] }
       return this.protocol('roblox-player:')
+    }
+    if (game.launcher === 'xbox') {
+      // Launch Microsoft Store/Xbox apps via AppsFolder AUMID when available
+      const aumid = (game && (game.aumid || game.appUri))
+      if (aumid && typeof aumid === 'string') {
+        const uri = aumid.startsWith('shell:AppsFolder') ? aumid : `shell:AppsFolder\\${aumid}`
+        return this.protocol(uri)
+      }
+      // Fallback open Store
+      return this.protocol('ms-windows-store:')
     }
     if (game.launcher === 'msstore') {
       // Prefer shell AppsFolder URI when available (PackageFamilyName!AppId)
@@ -279,7 +291,9 @@ export class PlaytimeService {
         })
         py.on('exit', () => {
           try {
-            resolve(JSON.parse(out || '{}'))
+            const parsed = JSON.parse(out || '{}')
+            if (DEBUG) log('python', args[0], { args: args.slice(1).join(' '), result: { pids: parsed?.pids, note: parsed?.note, matches: (parsed?.matches||[]).slice(0,3) } })
+            resolve(parsed)
           } catch {
             resolve(null)
           }
@@ -302,9 +316,7 @@ export class PlaytimeService {
           })
           const res = await runPythonJson(['find', findFilters])
           const pids = Array.isArray(res?.pids) ? res.pids.filter((p) => Number.isFinite(p)) : []
-          if (DEBUG) {
-            log('find(seed)', { pids, matches: (res?.matches || []).slice(0, 5), ts: res?.ts })
-          }
+          if (DEBUG) log('find(seed) parsed', { count: pids.length })
           if (pids.length > 0) {
             trackedPids = new Set(pids)
             seeded = true
@@ -339,7 +351,7 @@ export class PlaytimeService {
             res = null; 
           }
           const newlyFound = Array.isArray(res?.pids) ? res.pids.filter((p) => Number.isFinite(p)) : [];
-          if (DEBUG) log('find(periodic)', { newlyFound, matches: (res?.matches || []).slice(0, 5) });
+          if (DEBUG) log('find(periodic)', { newlyFound });
           if (newlyFound.length > 0) {
             trackedPids = new Set(newlyFound);
             const entry = this.running.get(key);
@@ -359,7 +371,7 @@ if (seeded && trackedPids.size === 0) {
             })
             const res = await runPythonJson(['find', findFilters])
             const reFound = Array.isArray(res?.pids) ? res.pids.filter((p) => Number.isFinite(p)) : []
-            if (DEBUG) log('find(reacquire)', { reFound, matches: (res?.matches || []).slice(0, 5), since })
+            if (DEBUG) log('find(reacquire)', { reFound, since })
             if (reFound.length > 0) {
               trackedPids = new Set(reFound)
               if (entry) entry.pids = [...trackedPids]

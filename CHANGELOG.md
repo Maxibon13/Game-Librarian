@@ -1,5 +1,12 @@
 # Changelog
 
+## Beta 2.1 (v7.1)
+- Added Compatability For Steam Api Thumbnail 
+  - works with Epic games and Ubisoft games [Uses steam api to pull game thumbnails]
+
+- Fixed Xbox Games 
+  - Games were not launching  
+
 ## Beta 2 (v7.0)
 - Added Sound Changer
   - Alt pack included

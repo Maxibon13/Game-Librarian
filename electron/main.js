@@ -206,11 +206,8 @@ async function registerIpcAndServices() {
   })
 
   ipcMain.handle('game:launch', async (_e, game) => {
-    // Launch Xbox/Microsoft Store apps by AUMID when available
-    if (game?.launcher === 'xbox' && game?.aumid) {
-      try { await shell.openExternal(`shell:AppsFolder/${game.aumid}`) } catch {}
-      return true
-    }
+    try { console.log('[IPC] game:launch', { launcher: game?.launcher, title: game?.title, id: game?.id, aumid: game?.aumid }) } catch {}
+    // Use the unified launcher which also starts process monitoring
     await playtimeService.launchGameAndTrack(game)
     return true
   })
