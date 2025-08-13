@@ -1,4 +1,4 @@
-Game Librarian
+Game Librarian (VERSION 2.31 BETA)
 ==============
 
 <div align="center">
