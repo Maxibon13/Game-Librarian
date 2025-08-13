@@ -1,13 +1,12 @@
-Game Librarian (v2.3 BETA)
-==============
 
 <div align="center">
 
 <img src="src/Icon.png" alt="Game Librarian" width="96" />
+</div>
+Game Librarian (v2.3 BETA)
+==============
 
 Open‑source, unified game library for Windows — discover, launch, and track playtime across multiple launchers with a beautiful, modern UI.
-
-</div>
 
 Features
 --------
