@@ -24,7 +24,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   runUpdaterWithLogs: () => ipcRenderer.invoke('updater:runWithLogs'),
   onUpdaterLog: (handler) => ipcRenderer.on('updater:log', (_e, line) => handler(line)),
   onUpdaterDone: (handler) => ipcRenderer.on('updater:done', (_e, payload) => handler(payload)),
-  initBackend: () => ipcRenderer.invoke('backend:init')
+  initBackend: () => ipcRenderer.invoke('backend:init'),
+  detectController: () => ipcRenderer.invoke('controller:detect'),
+  toggleDevtools: () => ipcRenderer.invoke('devtools:toggle'),
+  exportLogsBundle: () => ipcRenderer.invoke('logs:exportBundle')
+})
+
+contextBridge.exposeInMainWorld('debugConsoleAPI', {
+  getBuffer: () => ipcRenderer.invoke('debug:getBuffer'),
+  clear: () => ipcRenderer.invoke('debug:clear'),
+  onLog: (handler) => ipcRenderer.on('debug:log', (_e, line) => handler(line)),
+  onCleared: (handler) => ipcRenderer.on('debug:cleared', () => handler())
 })
 
 

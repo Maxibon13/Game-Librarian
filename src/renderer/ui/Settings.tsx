@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { ThemeSelect as AudioProfileSelect } from './ThemeSelect'
+import DebugConsoleView from './DebugConsoleView'
 
 function formatKeyCombo(e: React.KeyboardEvent<HTMLInputElement>) {
   const parts: string[] = []
@@ -29,7 +30,7 @@ type SettingsData = {
   theme?: { name: string }
 }
 
-export function Settings({ onSaved, audio, audioProfile: initialProfile = 'normal', onAudioChange, onAudioProfileChange, hotkeys = {}, onHotkeysChange }: Props) {
+export function Settings({ onSaved, audio, audioProfile: initialProfile = 'normal', onAudioChange, onAudioProfileChange, hotkeys, onHotkeysChange }: Props) {
   const [settings, setSettings] = useState<SettingsData>({
     steam: { steamPath: '', customLibraries: [] },
     epic: { manifestDir: '' },
@@ -41,18 +42,21 @@ export function Settings({ onSaved, audio, audioProfile: initialProfile = 'norma
   const [masterVolume, setMasterVolume] = useState<number>(audio?.masterVolume ?? 1)
   const [audioProfile, setAudioProfile] = useState<'normal' | 'alt'>(initialProfile)
   useEffect(() => { setAudioProfile(initialProfile) }, [initialProfile])
-  const [keys, setKeys] = useState<{ [action: string]: string }>(hotkeys)
-  useEffect(() => setKeys(hotkeys), [hotkeys])
+  const [keys, setKeys] = useState<{ [action: string]: string }>(hotkeys || {})
+  useEffect(() => { if (hotkeys) setKeys(hotkeys) }, [hotkeys])
 
   useEffect(() => {
+    let mounted = true
     window.electronAPI.getSettings().then((s: any) => {
+      if (!mounted) return
       setSettings((prev) => ({
         ...prev,
         ...(s || {}),
         gog: { manifestDir: '', customLibraries: [], ...((s && s.gog) || {}) },
         ubisoft: { manifestDir: '', customLibraries: [], ...((s && s.ubisoft) || {}) }
       }))
-    })
+    }).catch(() => {})
+    return () => { mounted = false }
   }, [])
 
   const update = (updater: (s: SettingsData) => SettingsData) => setSettings((s) => updater({ ...s }))
@@ -136,6 +140,42 @@ export function Settings({ onSaved, audio, audioProfile: initialProfile = 'norma
                 { value: 'alt', label: 'Alt Sounds' }
               ]}
             />
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Debug Console</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, alignItems: 'start' }}>
+          <div>
+            <div style={{ fontSize: 12, opacity: .8, marginBottom: 6 }}>Real-time app logs</div>
+            <div
+              id="debug-console"
+              style={{
+                height: 220,
+                overflowX: 'hidden',
+                overflowY: 'auto',
+                background: 'rgba(0,0,0,0.4)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 6,
+                padding: 8,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                fontSize: 12,
+                lineHeight: 1.35
+              }}
+            >
+              <DebugConsoleView />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button className="btn btn-danger" onClick={async () => { try { await (window as any).debugConsoleAPI.clear() } catch {} }}>Clear buffer</button>
+            <button className="btn" onClick={async () => {
+              try {
+                const res = await (window as any).electronAPI.exportLogsBundle()
+                if (res && res.ok) alert(`Logs exported to: ${res.dir}`)
+                else alert('Failed to export logs')
+              } catch { alert('Failed to export logs') }
+            }}>Export bundle</button>
           </div>
         </div>
       </section>

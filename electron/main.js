@@ -20,6 +20,8 @@ let playtimeService = null
 let settingsService = null
 let backendInitialized = false
 let lastVersionJsonPath = null
+let debugLogBuffer = []
+let debugLogMax = 1000
 
 const APP_NAME = 'Game Librarian'
 const APP_REPOSITORY = 'https://github.com/Maxibon13/Game-Librarian'
@@ -200,6 +202,32 @@ async function registerIpcAndServices() {
   settingsService = new SettingsService(app.getPath('userData'))
   await settingsService.load()
 
+  // Install debug console forwarder once
+  try {
+    if (!console.__glWrapped) {
+      const orig = { log: console.log, warn: console.warn, error: console.error }
+      const push = (level, args) => {
+        try {
+          const ts = new Date().toISOString()
+          const text = args.map((a) => {
+            if (typeof a === 'string') return a
+            try { return JSON.stringify(a) } catch { return String(a) }
+          }).join(' ')
+          const line = { ts, level, text }
+          debugLogBuffer.push(line)
+          if (debugLogBuffer.length > debugLogMax) debugLogBuffer.splice(0, debugLogBuffer.length - debugLogMax)
+          for (const bw of BrowserWindow.getAllWindows()) {
+            try { bw.webContents.send('debug:log', line) } catch {}
+          }
+        } catch {}
+      }
+      console.log = (...args) => { try { orig.log.apply(console, args) } catch {}; push('log', args) }
+      console.warn = (...args) => { try { orig.warn.apply(console, args) } catch {}; push('warn', args) }
+      console.error = (...args) => { try { orig.error.apply(console, args) } catch {}; push('error', args) }
+      Object.defineProperty(console, '__glWrapped', { value: true, enumerable: false })
+    }
+  } catch {}
+
   ipcMain.handle('games:list', async () => {
     const games = await detectionService.detectAll(settingsService.get())
     return games.map((g) => ({ ...g, playtimeMinutes: playtimeService.getPlaytimeMinutes(g) }))
@@ -214,6 +242,52 @@ async function registerIpcAndServices() {
 
   ipcMain.handle('open:external', async (_e, url) => {
     await shell.openExternal(url)
+  })
+  ipcMain.handle('devtools:toggle', async () => {
+    try {
+      const win = BrowserWindow.getFocusedWindow() || mainWindow
+      if (!win) return false
+      if (win.webContents.isDevToolsOpened()) win.webContents.closeDevTools()
+      else win.webContents.openDevTools({ mode: 'detach' })
+      return true
+    } catch { return false }
+  })
+  ipcMain.handle('logs:exportBundle', async () => {
+    try {
+      const isDev = !app.isPackaged
+      const base = isDev ? process.cwd() : path.join(process.resourcesPath, '..')
+      const logsRoot = path.join(base, 'Logs')
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      await fs.mkdir(logsRoot, { recursive: true })
+      const outDir = path.join(logsRoot, `bundle-${timestamp}`)
+      await fs.mkdir(outDir, { recursive: true })
+      const items = []
+      // Collect playtime data and settings
+      try { items.push({ name: 'playtime.json', src: path.join(app.getPath('userData'), 'playtime.json') }) } catch {}
+      try { items.push({ name: 'settings.json', src: path.join(app.getPath('userData'), 'settings.json') }) } catch {}
+      // Collect recent renderer console if available via a dump file (optional future integration)
+      // Copy files best-effort
+      for (const it of items) {
+        try {
+          if (fsSync.existsSync(it.src)) {
+            const dest = path.join(outDir, it.name)
+            await fs.copyFile(it.src, dest)
+          }
+        } catch {}
+      }
+      // Write an info stub
+      try {
+        const info = {
+          createdAt: new Date().toISOString(),
+          appVersion: await getLocalVersion(),
+          os: process.platform,
+        }
+        await fs.writeFile(path.join(outDir, 'bundle.json'), JSON.stringify(info, null, 2), 'utf8')
+      } catch {}
+      return { ok: true, dir: outDir }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
   })
   ipcMain.handle('os:openPath', async (_e, p) => {
     try {
@@ -332,6 +406,23 @@ async function registerIpcAndServices() {
   ipcMain.handle('game:forceQuit', async (_e, game) => {
     try { playtimeService.forceQuit(game) } catch {}
     return true
+  })
+
+  // Temporarily disabled controller detection IPC until tests are finalized
+  ipcMain.handle('controller:detect', async () => ({ ok: false, connected: false }))
+
+  // Debug console IPC
+  ipcMain.handle('debug:getBuffer', async () => {
+    try { return { ok: true, lines: debugLogBuffer } } catch { return { ok: false, lines: [] } }
+  })
+  ipcMain.handle('debug:clear', async () => {
+    try {
+      debugLogBuffer = []
+      for (const bw of BrowserWindow.getAllWindows()) {
+        try { bw.webContents.send('debug:cleared') } catch {}
+      }
+      return true
+    } catch { return false }
   })
 
   ipcMain.handle('debug:steam', async () => {

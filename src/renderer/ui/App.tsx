@@ -47,8 +47,9 @@ export function App() {
   const [appVersion, setAppVersion] = useState<string | null>(null)
   const [theme, setTheme] = useState<string>('dark')
   const [showChangelog, setShowChangelog] = useState(false)
-
+  // Controller UI temporarily disabled
   useEffect(() => {
+    // Controller detection temporarily disabled
     const api = (window as any).electronAPI
     if (api?.listGames) {
       setLoading(true)
@@ -107,6 +108,7 @@ export function App() {
         if (typeof v === 'string' && v.length > 0) setAppVersion(v)
       }).catch(() => {})
     }
+    return () => {}
   }, [])
 
   function applyPresetTheme(name: string) {
@@ -264,6 +266,7 @@ export function App() {
 
   return (
     <div className={`app ${tab === 'settings' ? 'is-settings' : ''}`}>
+      {/* Controller toast temporarily disabled */}
       {session ? (
         <SessionOverlay
           game={session.game}
@@ -458,6 +461,7 @@ function onLaunch(
     audio.preload = 'auto'
     audio.play().catch(() => {})
   }
+  // Controller-mode prompts temporarily disabled
   setStarting({ game })
   return (window as any).electronAPI.launchGame(game)
 }

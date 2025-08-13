@@ -8,6 +8,7 @@ export class UbisoftDetector {
 
   async detect(settings) {
     if (process.platform !== 'win32') return []
+    try { console.log('[Detector:Ubisoft]: Initialising') } catch {}
     // Prefer Python detector for better accuracy
     const py = await this.tryPythonDetector(settings)
     if (py && Array.isArray(py.games) && py.games.length) {
@@ -19,6 +20,9 @@ export class UbisoftDetector {
           return steamImg ? { ...g, image: steamImg } : g
         } catch { return g }
       }))
+      try { console.log(`[Detector:Ubisoft]: Found Library at "Registry+DefaultDir"`) } catch {}
+      try { console.log(`[Detector:Ubisoft]: Found Games : ${JSON.stringify(withFallback.map(g=>({id:g.id,title:g.title})))}`) } catch {}
+      try { console.log('[Detector:Ubisoft]: Code ok') } catch {}
       return withFallback
     }
     const games = []
@@ -96,6 +100,9 @@ export class UbisoftDetector {
         return steamImg ? { ...g, image: steamImg } : g
       } catch { return g }
     }))
+    try { console.log(`[Detector:Ubisoft]: Found Library at "Registry+DefaultDir+CustomLibs"`) } catch {}
+    try { console.log(`[Detector:Ubisoft]: Found Games : ${JSON.stringify(results.map(g=>({id:g.id,title:g.title})))}`) } catch {}
+    try { console.log('[Detector:Ubisoft]: Code ok') } catch {}
     return results
   }
 

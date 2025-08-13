@@ -20,6 +20,7 @@ export class SteamDetector {
   }
 
   async detect(settings) {
+    try { console.log('[Detector:Steam]: Initialising') } catch {}
     // If Python is available, run the Python detector for higher accuracy
     const pythonResult = await this.tryPythonDetector(settings)
     if (pythonResult && pythonResult.games?.length) {
@@ -39,6 +40,9 @@ export class SteamDetector {
         manifests: games.map((g) => ({ id: g.id, title: g.title })),
         errors: []
       }
+      try { console.log(`[Detector:Steam]: Found Library at "${steamPath || ''}"`) } catch {}
+      try { console.log(`[Detector:Steam]: Found Games : ${JSON.stringify(games.map(g=>({id:g.id,title:g.title})))}`) } catch {}
+      try { console.log('[Detector:Steam]: Code ok') } catch {}
       return games
     }
 
@@ -137,6 +141,7 @@ export class SteamDetector {
     const games = []
     const libraries = Array.from(librariesSet)
     this.lastDebug.libraries = libraries
+    try { console.log(`[Detector:Steam]: Found Library at "${steamPath}"`) } catch {}
     for (const lib of libraries) {
       try {
         await fs.access(lib)
@@ -180,6 +185,8 @@ export class SteamDetector {
     }
 
     // Optional: deep heuristic scan can produce duplicates/false-positives; disable to avoid duplicates
+    try { console.log(`[Detector:Steam]: Found Games : ${JSON.stringify(games.map(g=>({id:g.id,title:g.title})))}`) } catch {}
+    try { console.log('[Detector:Steam]: Code ok') } catch {}
     return games
   }
 

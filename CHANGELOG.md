@@ -1,5 +1,13 @@
 # Changelog
 
+## Beta 2.2 (v7.2)
+- Removed Redundent Files
+  - Minecraft Detector
+
+- Added Debug Console  
+
+- Minor Bug Fixes
+
 ## Beta 2.11 (v7.11)
 - Fixed Sound Bugs
   - Incorrect sound playing on open game card
@@ -29,7 +37,7 @@
   - You can now find file locations
 
 ## Beta 1.421 (v6.421)
-- Important Uninstaller Bug Fixs
+- Important Uninstaller Bug Fixes
   - Now detects registry install location
 
 - First Time Installer Bug Fixes

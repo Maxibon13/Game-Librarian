@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 
 export class EpicDetector {
   async detect(settings) {
+    try { console.log('[Detector:Epic]: Initialising') } catch {}
     const manifestDir = await this.findManifestDir(settings)
     if (!manifestDir) return []
     let files = []
@@ -31,6 +32,9 @@ export class EpicDetector {
         return g
       }
     }))
+    try { console.log(`[Detector:Epic]: Found Library at "${manifestDir}"`) } catch {}
+    try { console.log(`[Detector:Epic]: Found Games : ${JSON.stringify(results.map(g=>({id:g.id,title:g.title})))}`) } catch {}
+    try { console.log('[Detector:Epic]: Code ok') } catch {}
     return results
   }
 

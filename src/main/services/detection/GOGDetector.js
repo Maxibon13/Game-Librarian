@@ -9,6 +9,7 @@ export class GOGDetector {
 
   async detect(settings) {
     if (process.platform !== 'win32') return []
+    try { console.log('[Detector:GOG]: Initialising') } catch {}
     const games = []
     try {
       // Query 32-bit registry hive where GOG stores game entries
@@ -46,6 +47,9 @@ export class GOGDetector {
         } catch {}
       }
     } catch {}
+    try { console.log(`[Detector:GOG]: Found Library at "Registry+CustomLibs"`) } catch {}
+    try { console.log(`[Detector:GOG]: Found Games : ${JSON.stringify(games.map(g=>({id:g.id,title:g.title})))}`) } catch {}
+    try { console.log('[Detector:GOG]: Code ok') } catch {}
     return games
   }
 }
