@@ -1,5 +1,9 @@
 # Changelog
 
+## Beta 2.11 (v7.11)
+- Fixed Sound Bugs
+  - Incorrect sound playing on open game card
+
 ## Beta 2.1 (v7.1)
 - Added Compatability For Steam Api Thumbnail 
   - works with Epic games and Ubisoft games [Uses steam api to pull game thumbnails]
