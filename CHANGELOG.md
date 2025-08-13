@@ -1,5 +1,9 @@
 # Changelog
 
+## Beta 2.31 (v7.31)
+- Bug Fix
+  - Epic launcher games not running
+
 ## Beta 2.3 (v7.3)
 - Added Recents Section
 

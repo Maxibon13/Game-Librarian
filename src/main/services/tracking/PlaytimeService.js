@@ -76,7 +76,12 @@ export class PlaytimeService {
       return this.protocol(`steam://rungameid/${game.id}`)
     }
     if (game.launcher === 'epic') {
-      return this.protocol(`com.epicgames.launcher://apps/${encodeURIComponent(game.id)}?action=launch&silent=true`)
+      // Use cmd start to invoke custom protocol reliably on Windows (avoids opening Explorer)
+      const uri = `com.epicgames.launcher://apps/${encodeURIComponent(game.id)}?action=launch&silent=true`
+      if (os.platform() === 'win32') {
+        return { command: 'cmd.exe', args: ['/c', 'start', '""', uri], shell: false }
+      }
+      return this.protocol(uri)
     }
     if (game.launcher === 'minecraft') {
       if (game.executablePath) return { command: game.executablePath, args: [] }
