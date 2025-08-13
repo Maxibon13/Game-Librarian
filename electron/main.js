@@ -230,7 +230,7 @@ async function registerIpcAndServices() {
 
   ipcMain.handle('games:list', async () => {
     const games = await detectionService.detectAll(settingsService.get())
-    return games.map((g) => ({ ...g, playtimeMinutes: playtimeService.getPlaytimeMinutes(g) }))
+    return games.map((g) => ({ ...g, playtimeMinutes: playtimeService.getPlaytimeMinutes(g), lastPlayedAt: playtimeService.getLastPlayedAt(g) }))
   })
 
   ipcMain.handle('game:launch', async (_e, game) => {

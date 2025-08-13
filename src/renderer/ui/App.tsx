@@ -27,6 +27,7 @@ export type Game = {
   executablePath?: string
   args?: string[]
   playtimeMinutes?: number
+  lastPlayedAt?: number
 }
 
 export function App() {
@@ -357,6 +358,12 @@ export function App() {
               />
             </div>
           )}
+          {tab === 'library' && (
+            <>
+              <RecentsRow games={games} onLaunch={(g)=> onLaunch(g, setStarting, audioEnabled, masterVolume, audioProfile)} audioEnabled={audioEnabled} masterVolume={masterVolume} audioProfile={audioProfile} />
+              <div className="section-divider" />
+            </>
+          )}
           {loading && <div className="loading-bar" />}
           <div key={tab} className="view animate-fade">
             {tab === 'library' ? (
@@ -443,6 +450,28 @@ export function App() {
         </div>
       )}
       {showChangelog && <Changelog onClose={() => setShowChangelog(false)} />}
+    </div>
+  )
+}
+
+function RecentsRow({ games, onLaunch, audioEnabled, masterVolume, audioProfile }: { games: Game[]; onLaunch: (g: Game) => void; audioEnabled: boolean; masterVolume: number; audioProfile: 'normal'|'alt' }) {
+  const MAX = 12
+  const recent = React.useMemo(() => {
+    const withTs = (games || []).filter(g => (g.lastPlayedAt || 0) > 0)
+    withTs.sort((a,b) => (b.lastPlayedAt||0) - (a.lastPlayedAt||0))
+    return withTs.slice(0, MAX)
+  }, [games])
+  if (recent.length === 0) return null
+  return (
+    <div className="recents-row">
+      <div className="recents-title">Recent</div>
+      <div className="recents-scroller">
+        {recent.map((g) => (
+          <div key={`${g.launcher}-${g.id}`} className="recents-item" onClick={() => onLaunch(g)}>
+            <GameCard game={g} onLaunch={() => onLaunch(g)} variant="small" audioEnabled={audioEnabled} masterVolume={masterVolume} audioProfile={audioProfile} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

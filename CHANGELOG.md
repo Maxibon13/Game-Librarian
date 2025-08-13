@@ -1,5 +1,8 @@
 # Changelog
 
+## Beta 2.3 (v7.3)
+- Added Recents Section
+
 ## Beta 2.2 (v7.2)
 - Removed Redundent Files
   - Minecraft Detector

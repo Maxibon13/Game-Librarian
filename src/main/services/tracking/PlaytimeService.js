@@ -155,6 +155,15 @@ export class PlaytimeService {
     return Math.floor(seconds / 60)
   }
 
+  getLastPlayedAt(game) {
+    try {
+      const key = `${game.launcher}:${game.id}`
+      const rec = this.data.sessions[key]
+      const ts = rec && typeof rec.updatedAt === 'number' ? rec.updatedAt : 0
+      return ts || 0
+    } catch { return 0 }
+  }
+
   getStoredSecondsForKey(key) {
     const rec = this.data.sessions[key]
     if (!rec) return 0
