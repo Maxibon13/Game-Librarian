@@ -58,8 +58,11 @@ body { margin:0; font-family: Inter, system-ui, Arial, sans-serif; background:ra
 /* Recents row */
 .recents-row { padding: 0 16px 10px 16px }
 .recents-title { font-size: 13px; opacity: .85; margin: 2px 0 6px }
-.recents-scroller { display:flex; gap: 12px; overflow-x: auto; padding-bottom: 2px }
-.recents-item .card.small { min-width: 160px }
+.recents-scroller { display:flex; gap: 12px; overflow-x: hidden; padding-bottom: 2px }
+.recents-item { flex: 1 1 0 }
+.recents-item .card.small { width: 100%; min-width: 0; height: 180px }
+.recents-row { display: grid; grid-template-columns: 1fr; }
+.recents-scroller { grid-template-columns: repeat(4, 1fr); display: grid }
 
 /* Divider between sections */
 .section-divider {

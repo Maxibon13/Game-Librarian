@@ -455,7 +455,7 @@ export function App() {
 }
 
 function RecentsRow({ games, onLaunch, audioEnabled, masterVolume, audioProfile }: { games: Game[]; onLaunch: (g: Game) => void; audioEnabled: boolean; masterVolume: number; audioProfile: 'normal'|'alt' }) {
-  const MAX = 12
+  const MAX = 4
   const recent = React.useMemo(() => {
     const withTs = (games || []).filter(g => (g.lastPlayedAt || 0) > 0)
     withTs.sort((a,b) => (b.lastPlayedAt||0) - (a.lastPlayedAt||0))
