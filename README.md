@@ -1,4 +1,4 @@
-Game Librarian
+Game Librarian (v2.x)
 ==============
 
 <div align="center">
@@ -12,17 +12,20 @@ Open‑source, unified game library for Windows — discover, launch, and track 
 Features
 --------
 
-- Unified library: Steam and Epic detection out of the box, plus Roblox and Minecraft launchers
-- Fast launcher: one‑click play with playtime tracking and session overlays
-- Polished UI: grid/list views, sorting, searchable library, modern animations
-- Themes: Dark, Light, Neon Blue/Red/Green, Orange Sunrise, Purple Galaxy, Sea Breeze
-- Smart Updater: lightweight, decimal versioning (e.g. 1.2) with in‑app update prompts
+- Unified library: Steam, Epic, Ubisoft, GOG, Xbox (MS Store) + Roblox
+- Playtime & sessions: one‑click play, live session overlay, recent games row
+- Polished UI: grid/list/small card views, A→Z and playtime sorting, search
+- Theming: Dark/Light + vivid presets (Neon Blue/Red/Green, Orange Sunrise, Purple Galaxy, Sea Breeze)
+- Smart updater: decimal versioning (e.g. 2.31) with in‑app checks
+- High‑res artwork: Steam header images as fallback for Epic/Ubisoft where available
+- In‑app Debug Console: live logs, clear buffer, export bundle to `Logs/` *WIP
 
 Install
 -------
 
-- Download the latest release from the Releases page (or the packaged installer) and run it
-- On first launch, the app checks for updates and shows a brief Welcome screen
+- Download the latest release and run the installer (`scripts/Installer.exe`).
+- The app checks for updates on launch.
+- To uninstall, use `scripts/Uninstaller.exe` (or Windows Apps & Features).
 
 Quick Start (Dev)
 -----------------
@@ -48,27 +51,30 @@ GameLibrarian/
     main/                # node/electron services (detection, playtime, settings)
     renderer/            # React UI (App, components, styles)
     sounds/              # UI SFX
-  scripts/               # Python helpers and updater scripts
-  Version.Json           # app version (decimal integer e.g. 6, 62)
+  scripts/               # Installer/Uninstaller/Updater tools and helpers
+  Version.Json           # App version (decimal number, used by updater)
 ```
 
 Detectors
 ---------
 
-- Steam: reads Steam libraries, manifests, and images
-- Epic: parses EGS manifests in ProgramData
-- Roblox & Minecraft: detects launchers and supports protocol fallbacks
+- Steam: libraries & manifests (with image cache/CDN fallbacks)
+- Epic: EGS manifests in ProgramData; launch via protocol (Windows)
+- Ubisoft: registry + default folders, Steam header image fallback
+- GOG: registry + custom libraries
+- Xbox (MS Store): registry + StartApps AUMID mapping; launched via AppsFolder
+- Roblox: protocol/launcher detection
 
 Theming
 -------
 
 Switch themes from the header dropdown. Light/Dark plus vivid presets with subtle gradients. Custom themes were previously supported; presets are now streamlined and consistent.
 
-Build
+Build / Package
 -----
 
 ```bash
-npm run dist:Dir    # Windows installer (NSIS)
+npm run dist:Dir    # Produce distributable folder
 ```
 
 Artifacts are created via electron‑builder. See `package.json` → `build` for config.
