@@ -22,18 +22,29 @@ export class PlaytimeService {
     const child = spawn(command.command, command.args, { detached: true, stdio: 'ignore', shell: command.shell ?? false })
     try { console.log('[PlaytimeDetector] spawn', { pid: child?.pid, parentPid: process.pid }) } catch {}
     child.unref()
-    this.running.set(`${game.launcher}:${game.id}`, { start: startedAt, proc: child, pids: [], parentPid: child.pid })
+    this.running.set(`${game.launcher}:${game.id}`, {
+      start: startedAt,
+      // On Windows, begin tracking time only after a PID match is found
+      trackStart: os.platform() === 'win32' ? null : startedAt,
+      proc: child,
+      pids: [],
+      parentPid: child.pid
+    })
     // Only consider child exit as session end if we launched the game's actual executable directly.
     if (os.platform() !== 'win32' && game.executablePath && command.command === game.executablePath) {
       child.on?.('exit', () => { this.finishSession(game, 'child-exit') })
     }
 
+    // On Windows, delay session-started until a matching PID is found.
+    // On other platforms, emit session-started immediately.
     try {
-      const DEBUG = true
-      const windows = BrowserWindow.getAllWindows()
-      if (windows.length > 0) {
-        if (DEBUG) console.log('[PlaytimeDetector] session-started', { title: game.title, startedAt, cmd: command })
-        windows[0].webContents.send('game:session-started', { game, startedAt })
+      if (os.platform() !== 'win32') {
+        const DEBUG = true
+        const windows = BrowserWindow.getAllWindows()
+        if (windows.length > 0) {
+          if (DEBUG) console.log('[PlaytimeDetector] session-started', { title: game.title, startedAt, cmd: command })
+          windows[0].webContents.send('game:session-started', { game, startedAt })
+        }
       }
     } catch (e) {
       console.error('Failed to send session-started:', e)
@@ -49,12 +60,20 @@ export class PlaytimeService {
     const key = `${game.launcher}:${game.id}`
     const entry = this.running.get(key)
     if (!entry) return
-    const durationMs = Date.now() - entry.start
+    const platform = os.platform()
+    // On Windows, only count playtime from the first PID match
+    let baseStart = entry.start
+    if (platform === 'win32') {
+      baseStart = typeof entry.trackStart === 'number' ? entry.trackStart : null
+    }
+    const durationMs = baseStart == null ? 0 : (Date.now() - baseStart)
     this.running.delete(key)
-    const seconds = Math.max(0, Math.floor(durationMs / 1000))
-    const prevSeconds = this.getStoredSecondsForKey(key)
-    this.data.sessions[key] = { seconds: prevSeconds + seconds, updatedAt: Date.now() }
-    void this.save()
+    if (baseStart != null) {
+      const seconds = Math.max(0, Math.floor(durationMs / 1000))
+      const prevSeconds = this.getStoredSecondsForKey(key)
+      this.data.sessions[key] = { seconds: prevSeconds + seconds, updatedAt: Date.now() }
+      void this.save()
+    }
 
     try {
       console.log('[PlaytimeDetector] session-ended', { title: game.title, durationMs, reason: reason || 'unknown' })
@@ -281,8 +300,14 @@ export class PlaytimeService {
     const seedWindowMs = 45000
     const graceAfterEmptyMs = 3500
     let emptySinceTs = null
-    const DEBUG = true
-    const log = (...args) => { if (DEBUG) console.log('[PlaytimeDetector]', ...args) }
+    const VERBOSE = false
+    const log = (...args) => { console.log('[PlaytimeDetector]', ...args) }
+    const vlog = (...args) => { if (VERBOSE) console.log('[PlaytimeDetector]', ...args) }
+    let waitingLogged = false
+    let matchedLogged = false
+    let lastMatchedAt = null
+    let lastProcessLostLogSec = null
+    let lastKnownMatch = null
 
     log('monitor start', {
       key,
@@ -292,6 +317,7 @@ export class PlaytimeService {
       executablePath: game.executablePath,
       installDir: game.installDir
     })
+    if (!waitingLogged) { waitingLogged = true; log('Waiting For Process') }
     const runPythonJson = (args) => new Promise((resolve) => {
       const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
       const scriptPath = path.join(base, 'scripts', 'proc.py')
@@ -306,7 +332,7 @@ export class PlaytimeService {
         py.on('exit', () => {
           try {
             const parsed = JSON.parse(out || '{}')
-            if (DEBUG) log('python', args[0], { args: args.slice(1).join(' '), result: { pids: parsed?.pids, note: parsed?.note, matches: (parsed?.matches||[]).slice(0,3) } })
+            vlog('python', args[0], { args: args.slice(1).join(' '), result: { pids: parsed?.pids, note: parsed?.note, matches: (parsed?.matches||[]).slice(0,3) } })
             resolve(parsed)
           } catch {
             resolve(null)
@@ -315,6 +341,23 @@ export class PlaytimeService {
       }
       tryRun('python')
     })
+
+    let emittedStart = false
+    const emitSessionStartedIfNeeded = () => {
+      if (emittedStart) return
+      try {
+        const windows = BrowserWindow.getAllWindows()
+        if (windows.length > 0) {
+          const entry = this.running.get(key)
+          const startedAt = entry?.start || Date.now()
+          log('session-started (on first PID match)', { title: game.title, startedAt })
+          windows[0].webContents.send('game:session-started', { game, startedAt })
+          emittedStart = true
+        }
+      } catch (e) {
+        console.error('Failed to send session-started (Windows PID match):', e)
+      }
+    }
 
     const poll = async () => {
       if (!this.running.has(key)) return
@@ -330,12 +373,25 @@ export class PlaytimeService {
           })
           const res = await runPythonJson(['find', findFilters])
           const pids = Array.isArray(res?.pids) ? res.pids.filter((p) => Number.isFinite(p)) : []
-          if (DEBUG) log('find(seed) parsed', { count: pids.length })
+          vlog('find(seed) parsed', { count: pids.length })
           if (pids.length > 0) {
             trackedPids = new Set(pids)
             seeded = true
             const entry = this.running.get(key)
-            if (entry) entry.pids = [...trackedPids]
+            if (entry) {
+              entry.pids = [...trackedPids]
+              if (entry.trackStart == null) entry.trackStart = Date.now()
+            }
+            if (!matchedLogged) {
+              matchedLogged = true
+              lastMatchedAt = Date.now()
+              const matchInfo = Array.isArray(res?.matches) && res.matches.length > 0 ? res.matches[0] : null
+              lastKnownMatch = matchInfo
+              log('Process Matched:', matchInfo ? { match: matchInfo } : { pids: [...trackedPids] })
+            } else {
+              lastMatchedAt = Date.now()
+            }
+            emitSessionStartedIfNeeded()
           }
         }
 
@@ -343,7 +399,7 @@ export class PlaytimeService {
           const aliveFilters = JSON.stringify({ pids: [...trackedPids] })
           const aliveRes = await runPythonJson(['alive', aliveFilters])
           const alive = Array.isArray(aliveRes?.pids) ? aliveRes.pids.filter((p) => Number.isFinite(p)) : []
-          if (DEBUG) log('alive(check)', { before: [...trackedPids], alive })
+          vlog('alive(check)', { before: [...trackedPids], alive })
           trackedPids = new Set(alive)
           const entry = this.running.get(key)
           if (entry) entry.pids = [...trackedPids]
@@ -361,15 +417,28 @@ export class PlaytimeService {
           try { 
             res = await runPythonJson(['find', findFilters]); 
           } catch (err) { 
-            log('periodic reacquire error', err); 
+            vlog('periodic reacquire error', err); 
             res = null; 
           }
           const newlyFound = Array.isArray(res?.pids) ? res.pids.filter((p) => Number.isFinite(p)) : [];
-          if (DEBUG) log('find(periodic)', { newlyFound });
+          vlog('find(periodic)', { newlyFound });
           if (newlyFound.length > 0) {
             trackedPids = new Set(newlyFound);
             const entry = this.running.get(key);
-            if (entry) entry.pids = [...trackedPids];
+            if (entry) {
+              entry.pids = [...trackedPids];
+              if (entry.trackStart == null) entry.trackStart = Date.now()
+            }
+            if (!matchedLogged) {
+              matchedLogged = true
+              lastMatchedAt = Date.now()
+              const matchInfo = Array.isArray(res?.matches) && res.matches.length > 0 ? res.matches[0] : null
+              lastKnownMatch = matchInfo
+              log('Process Matched:', matchInfo ? { match: matchInfo } : { pids: [...trackedPids] })
+            } else {
+              lastMatchedAt = Date.now()
+            }
+            emitSessionStartedIfNeeded()
           }
         }
 if (seeded && trackedPids.size === 0) {
@@ -385,11 +454,24 @@ if (seeded && trackedPids.size === 0) {
             })
             const res = await runPythonJson(['find', findFilters])
             const reFound = Array.isArray(res?.pids) ? res.pids.filter((p) => Number.isFinite(p)) : []
-            if (DEBUG) log('find(reacquire)', { reFound, since })
+            vlog('find(reacquire)', { reFound, since })
             if (reFound.length > 0) {
               trackedPids = new Set(reFound)
-              if (entry) entry.pids = [...trackedPids]
+              if (entry) {
+                entry.pids = [...trackedPids]
+                if (entry.trackStart == null) entry.trackStart = Date.now()
+              }
               emptySinceTs = null
+              if (!matchedLogged) {
+                matchedLogged = true
+                lastMatchedAt = Date.now()
+                const matchInfo = Array.isArray(res?.matches) && res.matches.length > 0 ? res.matches[0] : null
+                lastKnownMatch = matchInfo
+                log('Process Matched:', matchInfo ? { match: matchInfo } : { pids: [...trackedPids] })
+              } else {
+                lastMatchedAt = Date.now()
+              }
+              emitSessionStartedIfNeeded()
             } else if (since >= graceAfterEmptyMs) {
               log('ending session: no alive PIDs after grace window')
               this.finishSession(game, 'no-alive-pids-after-grace')
@@ -397,6 +479,13 @@ if (seeded && trackedPids.size === 0) {
             }
           } else {
             emptySinceTs = null
+            if (lastMatchedAt != null) {
+              const secs = Math.floor((Date.now() - lastMatchedAt) / 1000)
+              if (lastProcessLostLogSec == null || secs > lastProcessLostLogSec) {
+                lastProcessLostLogSec = secs
+                log('[ProcessLost]:', { sinceSeconds: secs, lastMatch: lastKnownMatch || {} })
+              }
+            }
           }
         } else if (seeded) {
           // Seeded but nothing alive. Try a quick re-acquire attempt before ending.
@@ -411,16 +500,36 @@ if (seeded && trackedPids.size === 0) {
           })
           const res = await runPythonJson(['find', findFilters])
           const reFound = Array.isArray(res?.pids) ? res.pids.filter((p) => Number.isFinite(p)) : []
-          if (DEBUG) log('find(reacquire-initial)', { reFound, matches: (res?.matches || []).slice(0, 5), since })
+          vlog('find(reacquire-initial)', { reFound, matches: (res?.matches || []).slice(0, 5), since })
           if (reFound.length > 0) {
             trackedPids = new Set(reFound)
             const entry = this.running.get(key)
-            if (entry) entry.pids = [...trackedPids]
+            if (entry) {
+              entry.pids = [...trackedPids]
+              if (entry.trackStart == null) entry.trackStart = Date.now()
+            }
             emptySinceTs = null
+            if (!matchedLogged) {
+              matchedLogged = true
+              lastMatchedAt = Date.now()
+              const matchInfo = Array.isArray(res?.matches) && res.matches.length > 0 ? res.matches[0] : null
+              lastKnownMatch = matchInfo
+              log('Process Matched:', matchInfo ? { match: matchInfo } : { pids: [...trackedPids] })
+            } else {
+              lastMatchedAt = Date.now()
+            }
+            emitSessionStartedIfNeeded()
           } else if (since >= graceAfterEmptyMs) {
             log('ending session: seeded but no PIDs found after grace window')
             this.finishSession(game, 'seeded-no-pids-after-grace')
             return
+          }
+          if (reFound.length === 0 && lastMatchedAt != null) {
+            const secs = Math.floor((Date.now() - lastMatchedAt) / 1000)
+            if (lastProcessLostLogSec == null || secs > lastProcessLostLogSec) {
+              lastProcessLostLogSec = secs
+              log('[ProcessLost]:', { sinceSeconds: secs, lastMatch: lastKnownMatch || {} })
+            }
           }
         } else if ((Date.now() - startTime) >= seedWindowMs) {
           // Could not seed within window -> consider it closed

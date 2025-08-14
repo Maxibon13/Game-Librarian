@@ -360,7 +360,14 @@ export function App() {
           )}
           {tab === 'library' && (
             <>
-              <RecentsRow games={games} onLaunch={(g)=> onLaunch(g, setStarting, audioEnabled, masterVolume, audioProfile)} audioEnabled={audioEnabled} masterVolume={masterVolume} audioProfile={audioProfile} />
+              <RecentsRow
+                games={games}
+                onLaunch={(g) => onLaunch(g, setStarting, audioEnabled, masterVolume, audioProfile)}
+                onOpen={(g) => onOpenMenu(g, setMenu, audioEnabled, masterVolume, audioProfile)}
+                audioEnabled={audioEnabled}
+                masterVolume={masterVolume}
+                audioProfile={audioProfile}
+              />
               <div className="section-divider" />
             </>
           )}
@@ -418,12 +425,18 @@ export function App() {
       {starting && (
         <div className="session-overlay starting">
           <div className="session-content">
-            <div className="session-title">Launching {starting.game.title}…</div>
+            <div className="session-title">Waiting for app</div>
             <div className="progress-bar">
               <div className="bar" />
             </div>
             <div className="session-actions">
-              <span style={{ opacity: 0.8, fontSize: 12 }}>Detecting game process…</span>
+              <button
+                className="btn"
+                onClick={() => {
+                  try { (window as any).electronAPI.forceQuit(starting.game) } catch {}
+                  setStarting(null)
+                }}
+              >Abort</button>
             </div>
           </div>
         </div>
@@ -454,7 +467,7 @@ export function App() {
   )
 }
 
-function RecentsRow({ games, onLaunch, audioEnabled, masterVolume, audioProfile }: { games: Game[]; onLaunch: (g: Game) => void; audioEnabled: boolean; masterVolume: number; audioProfile: 'normal'|'alt' }) {
+function RecentsRow({ games, onLaunch, onOpen, audioEnabled, masterVolume, audioProfile }: { games: Game[]; onLaunch: (g: Game) => void; onOpen: (g: Game) => void; audioEnabled: boolean; masterVolume: number; audioProfile: 'normal'|'alt' }) {
   const MAX = 4
   const recent = React.useMemo(() => {
     const withTs = (games || []).filter(g => (g.lastPlayedAt || 0) > 0)
@@ -467,8 +480,16 @@ function RecentsRow({ games, onLaunch, audioEnabled, masterVolume, audioProfile 
       <div className="recents-title">Recent</div>
       <div className="recents-scroller">
         {recent.map((g) => (
-          <div key={`${g.launcher}-${g.id}`} className="recents-item" onClick={() => onLaunch(g)}>
-            <GameCard game={g} onLaunch={() => onLaunch(g)} variant="small" audioEnabled={audioEnabled} masterVolume={masterVolume} audioProfile={audioProfile} />
+          <div key={`${g.launcher}-${g.id}`} className="recents-item">
+            <GameCard
+              game={g}
+              onLaunch={() => onLaunch(g)}
+              onOpen={() => onOpen(g)}
+              variant="small"
+              audioEnabled={audioEnabled}
+              masterVolume={masterVolume}
+              audioProfile={audioProfile}
+            />
           </div>
         ))}
       </div>

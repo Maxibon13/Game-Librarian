@@ -1,5 +1,14 @@
 # Changelog
 
+## Beta 2.4 (v7.4)
+- Added App Waiting Process Overlay
+
+- Bug Fixes
+  - Recent app launching even if the launch button not clicked
+  - App playtime being recorded when game inactive
+
+- Cleaned Debug Output
+
 ## Beta 2.31 (v7.31)
 - Bug Fix
   - Epic launcher games not running
