@@ -5,7 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   launchGame: (game) => ipcRenderer.invoke('game:launch', game),
   openExternal: (url) => ipcRenderer.invoke('open:external', url),
   getSettings: () => ipcRenderer.invoke('settings:get'),
-  saveSettings: (next) => ipcRenderer.invoke('settings:save', next)
+  saveSettings: (next) => ipcRenderer.invoke('settings:save', next),
+  onGamesUpdated: (callback) => ipcRenderer.on('games:updated', callback)
 })
 
 

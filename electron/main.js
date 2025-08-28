@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { GameDetectionService } from '../src/main/services/detection/GameDetectionService.js'
 import { PlaytimeService } from '../src/main/services/tracking/PlaytimeService.js'
 import { SettingsService } from '../src/main/services/settings/SettingsService.js'
+import { FastloadService } from '../src/main/services/detection/FastloadService.js'
 import { SteamDetector } from '../src/main/services/detection/SteamDetector.js'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
@@ -18,6 +19,7 @@ let appIcon = null
 const detectionService = new GameDetectionService()
 let playtimeService = null
 let settingsService = null
+let fastloadService = null
 let backendInitialized = false
 let lastVersionJsonPath = null
 let debugLogBuffer = []
@@ -200,6 +202,7 @@ async function registerIpcAndServices() {
   if (backendInitialized) return
   playtimeService = new PlaytimeService(app.getPath('userData'))
   settingsService = new SettingsService(app.getPath('userData'))
+  fastloadService = new FastloadService(app.getPath('userData'))
   await settingsService.load()
 
   // Install debug console forwarder once
@@ -229,8 +232,46 @@ async function registerIpcAndServices() {
   } catch {}
 
   ipcMain.handle('games:list', async () => {
-    const games = await detectionService.detectAll(settingsService.get())
-    return games.map((g) => ({ ...g, playtimeMinutes: playtimeService.getPlaytimeMinutes(g), lastPlayedAt: playtimeService.getLastPlayedAt(g) }))
+    console.log('[Fastload] games:list called')
+    // First try to load from fastload cache
+    let games = await fastloadService.loadGames()
+    
+    if (games.length === 0) {
+      // No cache available, do full detection
+      console.log('[Fastload] No cache available, performing full detection')
+      games = await detectionService.detectAll(settingsService.get())
+      // Save to cache for next time
+      await fastloadService.saveGames(games)
+    } else {
+      // Cache loaded, update in background
+      console.log('[Fastload] Cache loaded, updating in background')
+      setImmediate(async () => {
+        try {
+          const freshGames = await detectionService.detectAll(settingsService.get())
+          await fastloadService.saveGames(freshGames)
+          console.log('[Fastload] Background update completed')
+          // Notify UI that games have been updated (with playtime data)
+          const gamesWithPlaytime = freshGames.map((g) => ({ 
+            ...g, 
+            playtimeMinutes: playtimeService.getPlaytimeMinutes(g), 
+            lastPlayedAt: playtimeService.getLastPlayedAt(g) 
+          }))
+          for (const bw of BrowserWindow.getAllWindows()) {
+            try { bw.webContents.send('games:updated', gamesWithPlaytime) } catch {}
+          }
+        } catch (error) {
+          console.warn('[Fastload] Background update failed:', error.message)
+        }
+      })
+    }
+
+    console.log(`[Fastload] Returning ${games.length} games`)
+    // Add playtime data to games
+    return games.map((g) => ({ 
+      ...g, 
+      playtimeMinutes: playtimeService.getPlaytimeMinutes(g), 
+      lastPlayedAt: playtimeService.getLastPlayedAt(g) 
+    }))
   })
 
   ipcMain.handle('game:launch', async (_e, game) => {
@@ -394,8 +435,23 @@ async function registerIpcAndServices() {
 
   ipcMain.handle('settings:get', async () => settingsService.get())
   ipcMain.handle('settings:save', async (_e, next) => {
-    const saved = await settingsService.save(next)
-    return saved
+    const current = settingsService.get()
+    await settingsService.save(next)
+    
+    // Only clear fastload cache when game detection related settings change
+    const shouldClearCache = 
+      JSON.stringify(current?.steam) !== JSON.stringify(next?.steam) ||
+      JSON.stringify(current?.epic) !== JSON.stringify(next?.epic) ||
+      JSON.stringify(current?.gog) !== JSON.stringify(next?.gog) ||
+      JSON.stringify(current?.ubisoft) !== JSON.stringify(next?.ubisoft) ||
+      JSON.stringify(current?.xbox) !== JSON.stringify(next?.xbox)
+    
+    if (shouldClearCache && fastloadService) {
+      console.log('[Fastload] Game detection settings changed, clearing cache')
+      await fastloadService.clearCache()
+    }
+    
+    return { ok: true }
   })
 
   ipcMain.handle('playtime:resetAll', async () => {

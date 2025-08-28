@@ -78,6 +78,13 @@ export function App() {
         }
       })
     }
+    
+    if (api?.onGamesUpdated) {
+      api.onGamesUpdated((_event: any, updatedGames: Game[]) => {
+        console.log('Games updated from background cache refresh')
+        setGames(updatedGames)
+      })
+    }
 
     // Load UI/audio preferences
     if (api?.getSettings) {
@@ -343,6 +350,21 @@ export function App() {
                     <option value="playtime-desc">Most played</option>
                     <option value="playtime-asc">Least played</option>
                   </select>
+                  <button
+                    className="refresh-btn"
+                    title="Refresh games"
+                    onClick={async () => {
+                      setLoading(true)
+                      try {
+                        setGames(await (window as any).electronAPI.listGames())
+                      } finally {
+                        setLoading(false)
+                      }
+                    }}
+                    disabled={loading}
+                  >
+                    ↻
+                  </button>
                 </div>
               </div>
             )}

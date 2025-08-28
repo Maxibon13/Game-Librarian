@@ -1,5 +1,9 @@
 # Changelog
 
+## Beta 2.5 (v7.5)
+- Added App Fastloading
+- Added Cacheing refresh for fastloader
+
 ## Beta 2.4 (v7.4)
 - Added App Waiting Process Overlay
 

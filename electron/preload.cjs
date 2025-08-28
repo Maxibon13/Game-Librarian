@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pickDirectory: () => ipcRenderer.invoke('dialog:pickDirectory'),
   onSessionStart: (handler) => ipcRenderer.on('game:session-started', (_e, payload) => handler(payload)),
   onSessionEnd: (handler) => ipcRenderer.on('game:session-ended', (_e, payload) => handler(payload)),
+  onGamesUpdated: (handler) => ipcRenderer.on('games:updated', (_e, updatedGames) => handler(updatedGames)),
   // Updater
   getAppConfig: () => ipcRenderer.invoke('updater:getConfig'),
   debugVersion: () => ipcRenderer.invoke('version:debug'),
