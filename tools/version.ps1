@@ -55,7 +55,13 @@ function Compare-AppVersion([string]$local, [string]$remote) {
 
 $local = ''
 try {
-  $local = [string]((Get-Content -Raw -LiteralPath $LocalJson | ConvertFrom-Json).version)
+  $jsonPath = $LocalJson
+  if (-not [IO.Path]::IsPathRooted($jsonPath)) {
+    $jsonPath = [IO.Path]::GetFullPath((Join-Path (Get-Location) $jsonPath))
+  }
+  $json = Get-Content -Raw -LiteralPath $jsonPath | ConvertFrom-Json
+  $local = [string]($json.version)
+  if (-not $local) { $local = [string]($json.Version) }
 } catch { $local = '' }
 
 $remote = ''

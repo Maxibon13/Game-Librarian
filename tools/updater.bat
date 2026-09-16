@@ -11,8 +11,7 @@ set "REPO_URL=https://github.com/Maxibon13/Game-Librarian"
 set "RAW_VERSION_URL=https://raw.githubusercontent.com/Maxibon13/Game-Librarian/main/Version.Json"
 
 set "SCRIPT_DIR=%~dp0"
-set "ROOT_DIR=%SCRIPT_DIR%.."
-for %%I in ("%ROOT_DIR%.") do set "ROOT_DIR_NORM=%%~fI"
+for %%I in ("%SCRIPT_DIR%..") do set "ROOT_DIR_NORM=%%~fI"
 set "LOCAL_VERSION_JSON=%ROOT_DIR_NORM%\Version.Json"
 set "VERSION_PS1=%SCRIPT_DIR%version.ps1"
 
