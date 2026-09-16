@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import fsSync from 'node:fs'
+import { runPythonTool, runPythonJson as runPythonJsonTool } from '../pythonRuntime.js'
 
 export class PlaytimeService {
   running = new Map()
@@ -221,8 +222,6 @@ export class PlaytimeService {
     const platform = os.platform()
     try {
       if (platform === 'win32') {
-        const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-        const scriptPath = path.join(base, 'tools', 'proc.py')
         const filters = JSON.stringify({
           executablePath: game.executablePath || '',
           installDir: game.installDir || '',
@@ -232,17 +231,7 @@ export class PlaytimeService {
           preferImage: true,
           imageName: game.executablePath ? path.basename(game.executablePath) : ''
         })
-        await new Promise((resolve) => {
-          const runCmd = (cmd) => {
-            const py = spawn(cmd, [scriptPath, 'kill', filters], { stdio: ['ignore', 'pipe', 'ignore'] })
-            py.on('error', () => {
-              if (cmd === 'python') return runCmd('py')
-              return resolve(null)
-            })
-            py.on('exit', () => resolve(null))
-          }
-          runCmd('python')
-        })
+        await runPythonTool('proc.py', ['kill', filters])
       } else {
         if (entry?.pids?.length) {
           for (const pid of entry.pids) {
@@ -258,39 +247,19 @@ export class PlaytimeService {
 
   async getMatchingPidsViaPython(game) {
     if (os.platform() !== 'win32') return []
-    return await new Promise((resolve) => {
-      try {
-        const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-        const scriptPath = path.join(base, 'tools', 'proc.py')
-        const filters = JSON.stringify({
-          executablePath: game.executablePath || '',
-          installDir: game.installDir || '',
-          title: (game.title || '').toLowerCase(),
-          imageName: game.executablePath ? path.basename(game.executablePath) : ''
-        })
-        const runCmd = (cmd) => {
-          const py = spawn(cmd, [scriptPath, 'find', filters], { stdio: ['ignore', 'pipe', 'ignore'] })
-          let out = ''
-          py.stdout.on('data', (d) => (out += d.toString()))
-          py.on('error', () => {
-            if (cmd === 'python') return runCmd('py')
-            return resolve([])
-          })
-          py.on('exit', () => {
-            try {
-              const result = JSON.parse(out || '{}')
-              const pids = Array.isArray(result.pids) ? result.pids : []
-              return resolve(pids.filter((pid) => Number.isFinite(pid)))
-            } catch {
-              return resolve([])
-            }
-          })
-        }
-        runCmd('python')
-      } catch {
-        return resolve([])
-      }
-    })
+    try {
+      const filters = JSON.stringify({
+        executablePath: game.executablePath || '',
+        installDir: game.installDir || '',
+        title: (game.title || '').toLowerCase(),
+        imageName: game.executablePath ? path.basename(game.executablePath) : ''
+      })
+      const result = await runPythonJson('proc.py', ['find', filters])
+      const pids = Array.isArray(result?.pids) ? result.pids : []
+      return pids.filter((pid) => Number.isFinite(pid))
+    } catch {
+      return []
+    }
   }
 
   findSteamExe() {
@@ -332,29 +301,11 @@ export class PlaytimeService {
       installDir: game.installDir
     })
     if (!waitingLogged) { waitingLogged = true; log('Waiting For Process') }
-    const runPythonJson = (args) => new Promise((resolve) => {
-      const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-      const scriptPath = path.join(base, 'tools', 'proc.py')
-      const tryRun = (cmd) => {
-        const py = spawn(cmd, [scriptPath, ...args], { stdio: ['ignore', 'pipe', 'ignore'] })
-        let out = ''
-        py.stdout.on('data', (d) => (out += d.toString()))
-        py.on('error', () => {
-          if (cmd === 'python') return tryRun('py')
-          return resolve(null)
-        })
-        py.on('exit', () => {
-          try {
-            const parsed = JSON.parse(out || '{}')
-            vlog('python', args[0], { args: args.slice(1).join(' '), result: { pids: parsed?.pids, note: parsed?.note, matches: (parsed?.matches||[]).slice(0,3) } })
-            resolve(parsed)
-          } catch {
-            resolve(null)
-          }
-        })
-      }
-      tryRun('python')
-    })
+    const runPythonJson = async (args) => {
+      const parsed = await runPythonJsonTool('proc.py', args)
+      if (parsed) vlog('python', args[0], { args: args.slice(1).join(' '), result: { pids: parsed?.pids, note: parsed?.note, matches: (parsed?.matches||[]).slice(0,3) } })
+      return parsed
+    }
 
     let emittedStart = false
     const emitSessionStartedIfNeeded = () => {

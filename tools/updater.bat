@@ -15,9 +15,15 @@ for %%I in ("%SCRIPT_DIR%..") do set "ROOT_DIR_NORM=%%~fI"
 set "LOCAL_VERSION_JSON=%ROOT_DIR_NORM%\Version.Json"
 set "VERSION_PS1=%SCRIPT_DIR%version.ps1"
 
-for %%I in ("%ROOT_DIR_NORM%") do set "CURRENT_ROOT_NAME=%%~nI"
+REM Packaged layout: <install root>\resources\tools\updater.bat -> install root is two levels up.
+REM Dev layout: <repo>\tools\updater.bat -> repo root. INSTALL_DIR (set by the app) wins when present.
 for %%I in ("%ROOT_DIR_NORM%\..") do set "ROOT_PARENT=%%~fI"
-set "DESIRED_ROOT=%ROOT_PARENT%\Game Librarian"
+if exist "%ROOT_DIR_NORM%\package.json" (
+  set "DESIRED_ROOT=%ROOT_DIR_NORM%"
+) else (
+  set "DESIRED_ROOT=%ROOT_PARENT%"
+)
+if defined INSTALL_DIR set "DESIRED_ROOT=%INSTALL_DIR%"
 
 if /i "%~1"=="check" (
   powershell -NoProfile -ExecutionPolicy Bypass -File "%VERSION_PS1%" -LocalJson "%LOCAL_VERSION_JSON%" -RemoteUrl "%RAW_VERSION_URL%" -RepoUrl "%REPO_URL%"
@@ -30,20 +36,16 @@ if not defined UPDATE_AVAILABLE set "UPDATE_AVAILABLE=0"
 if "%UPDATE_AVAILABLE%"=="1" (
   echo [INFO] Update available
   set "INSTALL_DIR=%DESIRED_ROOT%"
-  if not exist "%INSTALL_DIR%" (
-    mkdir "%INSTALL_DIR%" >nul 2>nul
-  )
-  echo [INFO] Installing/updating into "%INSTALL_DIR%" using installer executable/GUI when available ...
+  echo [INFO] Launching installer to update "%INSTALL_DIR%" ...
   set "INSTALLER_DIR=%ROOT_DIR_NORM%\installer"
   pushd "%INSTALLER_DIR%" >nul
-  set "INSTALL_DIR=%INSTALL_DIR%"
   if exist "%INSTALLER_DIR%\Installer.exe" (
     echo [INFO] Launching Installer.exe
-    start "Installer" /b "%INSTALLER_DIR%\Installer.exe"
+    start "Installer" /b "%INSTALLER_DIR%\Installer.exe" --update
     set "ERR=%ERRORLEVEL%"
   ) else if exist "%INSTALLER_DIR%\src\installer_gui.pyw" (
     echo [INFO] Launching Python installer GUI (installer_gui.pyw)
-    start "Installer" cmd /c "py -3 \"%INSTALLER_DIR%\src\installer_gui.pyw\""
+    start "Installer" cmd /c "py -3 \"%INSTALLER_DIR%\src\installer_gui.pyw\" --update"
     set "ERR=%ERRORLEVEL%"
   ) else (
     echo [ERROR] No installer found in "%INSTALLER_DIR%"
@@ -54,7 +56,7 @@ if "%UPDATE_AVAILABLE%"=="1" (
     echo [ERROR] Installer failed with code %ERR%.
     exit /b %ERR%
   )
-  echo [INFO] Update complete.
+  echo [INFO] Installer started. It downloads the latest release and updates the app.
   exit /b 0
 ) else (
   echo [INFO] Already up to date.

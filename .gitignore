@@ -2,6 +2,9 @@
 node_modules
 dist
 build
+release
+# Embedded Python runtime fetched by installer/build_release.ps1 (shipped as resources/python)
+runtime
 
 # Local-only: installer & launcher sources (only installer/*.exe ships)
 installer/src

@@ -3,8 +3,9 @@ import path from 'node:path'
 import os from 'node:os'
 import { parse } from 'vdf-extra'
 import fg from 'fast-glob'
-import { spawnSync, spawn } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
+import { runPythonJson } from '../pythonRuntime.js'
 
 export class SteamDetector {
   constructor() {
@@ -281,33 +282,9 @@ export class SteamDetector {
   }
 
   async tryPythonDetector(settings) {
-    // Try 'python' and 'py' commands. Resolve script path for packaged build
     const extras = JSON.stringify(settings?.steam?.customLibraries || [])
-    const base = (await import('electron')).app?.isPackaged ? process.resourcesPath : process.cwd()
-    const scriptPath = path.join(base, 'tools', 'steam_detect.py')
-    const candidates = [
-      ['python', [scriptPath, extras]],
-      ['py', [scriptPath, extras]]
-    ]
-    for (const [cmd, args] of candidates) {
-      try {
-        const out = await new Promise((resolve, reject) => {
-          const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] })
-          let stdout = ''
-          let stderr = ''
-          p.stdout.on('data', (d) => (stdout += d.toString()))
-          p.stderr.on('data', (d) => (stderr += d.toString()))
-          p.on('error', reject)
-          p.on('close', (code) => {
-            if (code === 0 && stdout) resolve(stdout)
-            else reject(new Error(stderr || `python exited ${code}`))
-          })
-        })
-        const parsed = JSON.parse(out)
-        if (parsed?.games) return parsed
-      } catch {}
-    }
-    return null
+    const parsed = await runPythonJson('steam_detect.py', [extras])
+    return parsed?.games ? parsed : null
   }
 }
 

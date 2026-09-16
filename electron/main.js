@@ -226,6 +226,11 @@ function parseOwnerRepo(repoUrl) {
   return { owner: 'Maxibon13', repo: 'Game-Librarian' }
 }
 
+// Folder the installer should update: repo root in dev, folder containing Game Librarian.exe when packaged
+function installRootDir() {
+  return app.isPackaged ? path.dirname(process.resourcesPath) : process.cwd()
+}
+
 // Attempt to stop the Vite dev server to clean up the dev console (Windows only)
 async function stopDevViteIfRunning() {
   try {
@@ -762,9 +767,8 @@ app.whenReady().then(async () => {
       const base = isDev ? process.cwd() : process.resourcesPath
       const scriptPath = path.join(base, 'tools', 'updater.bat')
       const env = { ...process.env }
-      // Ensure desired install root: in dev update in-place, in prod install beside app under "Game Librarian"
-      const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
-      env.INSTALL_DIR = desired
+      // Install root: in dev update in-place, in prod the folder holding Game Librarian.exe (parent of resources)
+      env.INSTALL_DIR = installRootDir()
       return await new Promise((resolve) => {
         const p = spawn('cmd.exe', ['/c', scriptPath], { stdio: ['ignore','inherit','inherit'], env })
         p.on('error', () => resolve({ ok: false }))
@@ -780,8 +784,7 @@ app.whenReady().then(async () => {
       const base = isDev ? process.cwd() : process.resourcesPath
       const scriptPath = path.join(base, 'tools', 'updater.bat')
       const env = { ...process.env }
-      const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
-      env.INSTALL_DIR = desired
+      env.INSTALL_DIR = installRootDir()
       const p = spawn('cmd.exe', ['/c', scriptPath], { env })
       const forward = (channel, data) => {
         const text = Buffer.isBuffer(data) ? data.toString() : String(data || '')
@@ -816,15 +819,15 @@ app.whenReady().then(async () => {
       const exeInstaller = path.join(installerDir, 'Installer.exe')
       const pyGui = path.join(installerDir, 'src', 'installer_gui.pyw')
       const env = { ...process.env, GL_LAUNCHED_FROM_APP: '1' }
-      env.INSTALL_DIR = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
+      env.INSTALL_DIR = installRootDir()
       // Launch via 'start' so the GUI is detached from the Electron process group and
       // survives the app quitting right after spawning.
       const launch = (cwd, ...args) => spawn('cmd.exe', ['/c', 'start', '""', ...args], { cwd, env, detached: true, windowsHide: false, stdio: 'ignore' })
       let child
       if (fsSync.existsSync(exeInstaller)) {
-        child = launch(installerDir, 'Installer.exe')
+        child = launch(installerDir, 'Installer.exe', '--update')
       } else if (fsSync.existsSync(pyGui)) {
-        child = launch(path.dirname(pyGui), 'py', '-3', path.basename(pyGui))
+        child = launch(path.dirname(pyGui), 'py', '-3', path.basename(pyGui), '--update')
       } else {
         return { ok: false, error: 'Installer not found at ' + exeInstaller }
       }

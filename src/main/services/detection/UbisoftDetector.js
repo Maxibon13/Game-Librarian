@@ -1,7 +1,8 @@
-import { spawnSync, spawn } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
+import { runPythonJson } from '../pythonRuntime.js'
 
 export class UbisoftDetector {
   constructor() { this.type = 'ubisoft' }
@@ -154,49 +155,16 @@ export class UbisoftDetector {
 
   async tryPythonDetector(settings) {
     try {
-      const { spawn } = await import('node:child_process')
-      const base = (await import('electron')).app?.isPackaged ? process.resourcesPath : process.cwd()
-      const script = path.join(base, 'tools', 'ubisoft_detect.py')
       const extras = JSON.stringify(settings?.ubisoft?.customLibraries || [])
-      return await new Promise((resolve) => {
-        const p = spawn('python', [script, extras], { stdio: ['ignore', 'pipe', 'ignore'] })
-        let out = ''
-        p.stdout.on('data', (d) => (out += d.toString()))
-        p.on('error', () => resolve(null))
-        p.on('close', () => {
-          try { resolve(JSON.parse(out || '{}')) } catch { resolve(null) }
-        })
-      })
+      return await runPythonJson('ubisoft_detect.py', [extras])
     } catch { return null }
   }
 
   async trySteamCommunityImage(gameTitle) {
     try {
-      const base = (await import('electron')).app?.isPackaged ? process.resourcesPath : process.cwd()
-      const scriptPath = path.join(base, 'tools', 'SteamApi_Search.py')
-      const candidates = [
-        ['python', [scriptPath, '--game', gameTitle]],
-        ['py', [scriptPath, '--game', gameTitle]]
-      ]
-      for (const [cmd, args] of candidates) {
-        try {
-          const out = await new Promise((resolve, reject) => {
-            const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] })
-            let stdout = ''
-            let stderr = ''
-            p.stdout.on('data', (d) => (stdout += d.toString()))
-            p.stderr.on('data', (d) => (stderr += d.toString()))
-            p.on('error', reject)
-            p.on('close', (code) => {
-              if (code === 0 && stdout) resolve(stdout)
-              else reject(new Error(stderr || `python exited ${code}`))
-            })
-          })
-          const parsed = JSON.parse(out)
-          const url = parsed && parsed.imageUrl
-          if (url && typeof url === 'string' && url.startsWith('http')) return url
-        } catch {}
-      }
+      const parsed = await runPythonJson('SteamApi_Search.py', ['--game', gameTitle], { timeoutMs: 20000 })
+      const url = parsed && parsed.imageUrl
+      if (url && typeof url === 'string' && url.startsWith('http')) return url
     } catch {}
     return undefined
   }

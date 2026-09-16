@@ -23,17 +23,20 @@ Features
 Install
 -------
 
-- Download the latest release and run the installer (`installer/Installer.exe`).
-- The app checks for updates on launch.
-- To uninstall, use `installer/Uninstaller.exe` (or Windows Apps & Features).
+- Download `GameLibrarian-Setup.exe` from the latest release and run it. Everything is bundled (Electron app + embedded Python runtime); nothing else needs to be installed, and it works offline on a fresh Windows install.
+- Default location: `%LOCALAPPDATA%\Programs\Game Librarian` (per-user, no admin).
+- The app checks for updates on launch and re-runs the bundled installer, which downloads `GameLibrarian-win.zip` from the latest GitHub release and updates in place.
+- To uninstall, use Windows Apps & Features (or `resources\installer\Uninstaller.exe` in the install folder).
 
-Building the installer (Python 3.10+, Pillow, PyInstaller):
+Unattended: `GameLibrarian-Setup.exe --silent [--dir <path>] [--no-shortcuts]`, `Uninstaller.exe --silent [--remove-userdata]`. Logs: `%TEMP%\GameLibrarian_install.log`.
+
+Building a release (Node 18+, Python 3.10+ with tkinter; PyInstaller/Pillow are pip-installed by the script):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File installer/src/build_installers.ps1
+npm run release        # = powershell -ExecutionPolicy Bypass -File installer/build_release.ps1
 ```
 
-Sources live in `installer/src/` (gitignored: `installer_gui.pyw`, `uninstaller_gui.pyw`, shared `gl_ui.py`, `Librarian_launcher.pyw`); the script rebuilds both executables into `installer/`. Add `-Launcher` to also rebuild `Librarian_Launcher.exe`.
+This runs `vite build`, fetches the Python embeddable runtime into `runtime/python`, packages the app with electron-builder into `release/win-unpacked`, zips it to `release/GameLibrarian-win.zip`, and builds `release/GameLibrarian-Setup.exe` with that zip embedded. It also refreshes `installer/Installer.exe` / `Uninstaller.exe` (lean, no payload) which ship inside the app under `resources/installer`. Upload both `GameLibrarian-Setup.exe` and `GameLibrarian-win.zip` to the GitHub release. Installer sources live in `installer/src/` (gitignored).
 
 Quick Start (Dev)
 -----------------
@@ -63,12 +66,16 @@ GameLibrarian/
     icons/               # app + installer icons
     sounds/              # UI SFX
   tools/                 # runtime helpers shipped with the app (python detectors, proc.py, updater.bat)
-  installer/             # Installer.exe / Uninstaller.exe (shipped)
-    src/                 # installer sources + build script (gitignored, local only)
+  installer/             # build_release.ps1 + Installer.exe / Uninstaller.exe (shipped in resources/installer)
+    src/                 # installer sources (gitignored, local only)
+  runtime/python/        # Python embeddable runtime, fetched by build_release.ps1 (gitignored; shipped as resources/python)
+  release/               # build output: win-unpacked, GameLibrarian-win.zip, GameLibrarian-Setup.exe (gitignored)
   dev/                   # scratch scripts and notes (gitignored, local only)
-  Librarian_Launcher.exe # entry point: runs dist/win-unpacked or `npm run dev`
+  Librarian_Launcher.exe # dev entry point: runs release/win-unpacked or `npm run dev`
   Version.Json           # App version string, compared against GitHub main
 ```
+
+Python tools (`tools/*.py`) are stdlib-only and run on the embedded runtime (`src/main/services/pythonRuntime.js` picks `resources/python/python.exe`, falling back to `python`/`py` on PATH in dev).
 
 Detectors
 ---------
@@ -89,7 +96,8 @@ Build / Package
 -----
 
 ```bash
-npm run dist:Dir    # Produce distributable folder
+npm run release     # Full release: app + embedded Python + payload zip + Setup.exe (see Install)
+npm run dist:dir    # Just the packaged app folder (release/win-unpacked); needs runtime/python + build/icon.ico from a prior release build
 ```
 
 Artifacts are created via electron‑builder. See `package.json` → `build` for config.

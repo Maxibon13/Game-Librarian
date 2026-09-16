@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
-import { spawn } from 'node:child_process'
+import { runPythonJson } from '../pythonRuntime.js'
 
 export class EpicDetector {
   async detect(settings) {
@@ -50,33 +50,11 @@ export class EpicDetector {
   }
 
   async trySteamCommunityImage(gameTitle) {
-    // Attempts to run scripts/SteamApi_Search.py to resolve an image URL
+    // Runs tools/SteamApi_Search.py to resolve a Steam header image URL
     try {
-      const base = (await import('electron')).app?.isPackaged ? process.resourcesPath : process.cwd()
-      const scriptPath = path.join(base, 'tools', 'SteamApi_Search.py')
-      const candidates = [
-        ['python', [scriptPath, '--game', gameTitle]],
-        ['py', [scriptPath, '--game', gameTitle]]
-      ]
-      for (const [cmd, args] of candidates) {
-        try {
-          const out = await new Promise((resolve, reject) => {
-            const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] })
-            let stdout = ''
-            let stderr = ''
-            p.stdout.on('data', (d) => (stdout += d.toString()))
-            p.stderr.on('data', (d) => (stderr += d.toString()))
-            p.on('error', reject)
-            p.on('close', (code) => {
-              if (code === 0 && stdout) resolve(stdout)
-              else reject(new Error(stderr || `python exited ${code}`))
-            })
-          })
-          const parsed = JSON.parse(out)
-          const url = parsed && parsed.imageUrl
-          if (url && typeof url === 'string' && url.startsWith('http')) return url
-        } catch {}
-      }
+      const parsed = await runPythonJson('SteamApi_Search.py', ['--game', gameTitle], { timeoutMs: 20000 })
+      const url = parsed && parsed.imageUrl
+      if (url && typeof url === 'string' && url.startsWith('http')) return url
     } catch {}
     return undefined
   }

@@ -1,4 +1,4 @@
-import path from 'node:path'
+import { runPythonTool, toolPath } from '../pythonRuntime.js'
 
 export class XboxDetector {
   constructor() { this.type = 'xbox' }
@@ -19,30 +19,16 @@ export class XboxDetector {
 
   async tryPythonDetector() {
     try {
-      const { spawn } = await import('node:child_process')
-      const base = (await import('electron')).app?.isPackaged ? process.resourcesPath : process.cwd()
-      const script = path.join(base, 'tools', 'xbox_detect.py')
+      const script = toolPath('xbox_detect.py')
       try { console.log('[Detector:Xbox]: Using script:', script) } catch {}
-      const run = (cmd) => new Promise((resolve) => {
-        try { console.log('[Detector:Xbox]: Trying interpreter:', cmd) } catch {}
-        const p = spawn(cmd, [script], { stdio: ['ignore', 'pipe', 'pipe'] })
-        let out = ''
-        let err = ''
-        p.stdout.on('data', (d) => (out += d.toString()))
-        p.stderr.on('data', (d) => (err += d.toString()))
-        p.on('error', () => resolve(null))
-        p.on('close', (code) => {
-          try { console.log(`[Detector:Xbox]: Interpreter ${cmd} exited with code ${code}`) } catch {}
-          if (err) { try { console.warn('[Detector:Xbox]: stderr:', err.slice(0, 400)) } catch {} }
-          try { resolve(JSON.parse(out || '{}')) } catch (e) {
-            try { console.warn('[Detector:Xbox]: JSON parse failed; raw:', (out || '').slice(0, 400)) } catch {}
-            resolve(null)
-          }
-        })
-      })
-      const res = (await run('python')) || (await run('py')) || (await run('python3'))
-      if (!res) { try { console.warn('[Detector:Xbox]: All interpreter attempts failed') } catch {} }
-      return res
+      const res = await runPythonTool(script)
+      if (!res) { try { console.warn('[Detector:Xbox]: No Python interpreter available') } catch {}; return null }
+      try { console.log(`[Detector:Xbox]: Interpreter ${res.cmd} exited with code ${res.code}`) } catch {}
+      if (res.stderr) { try { console.warn('[Detector:Xbox]: stderr:', res.stderr.slice(0, 400)) } catch {} }
+      try { return JSON.parse(res.stdout || '{}') } catch {
+        try { console.warn('[Detector:Xbox]: JSON parse failed; raw:', (res.stdout || '').slice(0, 400)) } catch {}
+        return null
+      }
     } catch { return null }
   }
 }

@@ -14,6 +14,7 @@
     "dist:dir": "electron-builder --win --dir",
     "dist:win": "electron-builder --win nsis",
     "dist": "electron-builder -w",
+    "release": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/build_release.ps1",
     "postinstall": "node tools/postinstall.mjs"
   },
   "dependencies": {
@@ -36,7 +37,9 @@
   },
   "build": {
     "appId": "com.gamelibrarian.app",
+    "productName": "Game Librarian",
     "asar": true,
+    "npmRebuild": false,
     "files": [
       "dist/**",
       "electron/**",
@@ -47,13 +50,15 @@
       "Version.Json"
     ],
     "extraResources": [
-      { "from": "tools", "to": "tools", "filter": ["**/*"] },
-      { "from": "installer", "to": "installer", "filter": ["*.exe"] },
-      { "from": "assets/icons", "to": "assets/icons", "filter": ["Icon.png"] },
+      { "from": "tools", "to": "tools", "filter": ["**/*", "!postinstall.mjs"] },
+      { "from": "runtime/python", "to": "python", "filter": ["**/*"] },
+      { "from": "installer", "to": "installer", "filter": ["Installer.exe", "Uninstaller.exe"] },
+      { "from": "assets/icons", "to": "assets/icons", "filter": ["Icon.png", "Icon.ico"] },
       { "from": "Version.Json", "to": "Version.Json" }
     ],
     "directories": {
-      "buildResources": "build"
+      "buildResources": "build",
+      "output": "release"
     },
     "win": {
       "target": [
