@@ -1,6 +1,6 @@
 {
   "name": "gamelibrarian",
-  "version": "0.1.0",
+  "version": "1.0.0-pre",
   "private": true,
   "description": "Cross-platform game library that unifies multiple launchers (Steam, Epic, etc.)",
   "main": "electron/main.js",
@@ -14,7 +14,7 @@
     "dist:dir": "electron-builder --win --dir",
     "dist:win": "electron-builder --win nsis",
     "dist": "electron-builder -w",
-    "postinstall": "node scripts/postinstall.mjs"
+    "postinstall": "node tools/postinstall.mjs"
   },
   "dependencies": {
     "fast-glob": "^3.3.2",
@@ -42,20 +42,15 @@
       "electron/**",
       "src/main/**",
       "src/renderer/**",
-      "scripts/**",
-      "src/sounds/**",
+      "assets/**",
       "package.json",
-      "Icon.png",
       "Version.Json"
     ],
     "extraResources": [
-      {
-        "from": "scripts",
-        "to": "scripts",
-        "filter": [
-          "**/*"
-        ]
-      }
+      { "from": "tools", "to": "tools", "filter": ["**/*"] },
+      { "from": "installer", "to": "installer", "filter": ["*.exe"] },
+      { "from": "assets/icons", "to": "assets/icons", "filter": ["Icon.png"] },
+      { "from": "Version.Json", "to": "Version.Json" }
     ],
     "directories": {
       "buildResources": "build"

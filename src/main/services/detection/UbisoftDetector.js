@@ -156,7 +156,7 @@ export class UbisoftDetector {
     try {
       const { spawn } = await import('node:child_process')
       const base = (await import('electron')).app?.isPackaged ? process.resourcesPath : process.cwd()
-      const script = path.join(base, 'scripts', 'ubisoft_detect.py')
+      const script = path.join(base, 'tools', 'ubisoft_detect.py')
       const extras = JSON.stringify(settings?.ubisoft?.customLibraries || [])
       return await new Promise((resolve) => {
         const p = spawn('python', [script, extras], { stdio: ['ignore', 'pipe', 'ignore'] })
@@ -173,7 +173,7 @@ export class UbisoftDetector {
   async trySteamCommunityImage(gameTitle) {
     try {
       const base = (await import('electron')).app?.isPackaged ? process.resourcesPath : process.cwd()
-      const scriptPath = path.join(base, 'scripts', 'SteamApi_Search.py')
+      const scriptPath = path.join(base, 'tools', 'SteamApi_Search.py')
       const candidates = [
         ['python', [scriptPath, '--game', gameTitle]],
         ['py', [scriptPath, '--game', gameTitle]]

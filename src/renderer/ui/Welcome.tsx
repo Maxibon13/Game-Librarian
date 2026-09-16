@@ -1,65 +1,47 @@
 import React from 'react'
+import { playSound } from '../lib/audio'
 
 type Props = {
   onContinue: () => void
 }
 
 export function Welcome({ onContinue }: Props) {
-  const logo = new URL('../../Icon.png', import.meta.url).href
-  const notif = new URL('../../sounds/welcome.ogg', import.meta.url).href
+  const logo = new URL('../../../assets/icons/Icon.png', import.meta.url).href
+  React.useEffect(() => {
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('.welcome-card [data-nav-default]')?.focus())
+  }, [])
   return (
-    <div className="welcome-overlay">
+    <div className="welcome-overlay" data-nav-root>
       <div className="welcome-card">
         <div className="welcome-title-wrap">
           <img className="welcome-title-logo" src={logo} alt="" aria-hidden />
           <h1 className="welcome-title">Welcome to Game Librarian</h1>
         </div>
         <p className="welcome-desc">
-          Game Librarian is an open-source, unified game library that brings your games together in one modern, lightweight hub.
-          Fast detection, streamlined launching, and playtime tracking — all wrapped in a polished, themeable interface.
+          One console-style home for every launcher on this PC. Steam, Epic, GOG, Ubisoft Connect and Xbox games are
+          detected automatically, launched from one place, and tracked for playtime.
         </p>
-        <div className="welcome-note" role="note">
-          <div className="note-header">
-            <span className="warn-icon" aria-hidden>⚠️</span>
-            <div>
-              <div className="note-title">Some libraries may be installed in non‑default locations.</div>
-              <div className="note-sub">If a game is missing, perform these checks:</div>
-            </div>
+        <div className="welcome-grid">
+          <div className="welcome-step">
+            <div className="welcome-step-title">Home</div>
+            <div className="welcome-step-body">Jump back into what you played last. Covers, rails, and a big Play button.</div>
           </div>
-          <div className="note-steps">
-            <div className="step">
-              <div className="step-title">Settings</div>
-            </div>
-            <div className="step-arrow">→</div>
-            <div className="step">
-              <div className="step-title">Steam / Epic Paths</div>
-              <ul className="step-hints">
-                <li>Verify that paths are correct</li>
-                <li>Add any extra libraries</li>
-              </ul>
-            </div>
-            <div className="step-arrow">→</div>
-            <div className="step"><div className="step-title">Validate</div></div>
-            <div className="step-arrow">→</div>
-            <div className="step">
-              <div className="step-title">Steam Debug</div>
-              <div className="step-desc">(in Settings) to verify detected folders</div>
-            </div>
+          <div className="welcome-step">
+            <div className="welcome-step-title">Library</div>
+            <div className="welcome-step-body">Every game in a portrait grid. Filter by launcher, search with <kbd>/</kbd>.</div>
+          </div>
+          <div className="welcome-step">
+            <div className="welcome-step-title">Controller ready</div>
+            <div className="welcome-step-body">Plug in a gamepad: <kbd>A</kbd> plays, <kbd>Y</kbd> opens details, <kbd>B</kbd> goes back.</div>
           </div>
         </div>
+        <div className="welcome-note" role="note">
+          Missing a game? Launchers installed somewhere unusual can be pointed at in <strong>Settings → Library paths</strong>, then rescanned.
+        </div>
         <div className="welcome-actions">
-          <button className="btn btn-primary" onClick={() => {
-            try {
-              const audio = new Audio(notif)
-              audio.volume = 0.7
-              audio.play().catch(() => {})
-            } catch {}
-            onContinue()
-          }}>Continue</button>
+          <button className="btn btn-accent btn-lg" data-nav data-nav-default onClick={() => { playSound('welcome'); onContinue() }}>Continue</button>
         </div>
       </div>
     </div>
   )
 }
-
-

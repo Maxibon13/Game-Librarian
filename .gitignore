@@ -1,4 +1,15 @@
+# Dependencies / build output
 node_modules
 dist
-TESTING
 build
+
+# Local-only: installer & launcher sources (only installer/*.exe ships)
+installer/src
+
+# Local-only: experiments, scratch scripts, notes
+dev
+
+# Runtime junk
+run_log.txt
+__pycache__/
+*.pyc

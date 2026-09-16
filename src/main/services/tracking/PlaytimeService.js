@@ -9,6 +9,18 @@ export class PlaytimeService {
   running = new Map()
   storePath
   data = { sessions: {} }
+  // Optional main-process listeners: { onSessionStart({game,startedAt}), onSessionEnd({game,durationMs,reason}) }
+  hooks = {}
+
+  isRunning(game) {
+    return this.running.has(`${game?.launcher}:${game?.id}`)
+  }
+
+  activeSessions() {
+    const out = []
+    for (const [key, entry] of this.running) out.push({ key, startedAt: entry.start, tracking: entry.trackStart != null })
+    return out
+  }
 
   constructor(userDataDir) {
     this.storePath = path.join(userDataDir || process.cwd(), 'playtime.json')
@@ -45,6 +57,7 @@ export class PlaytimeService {
           if (DEBUG) console.log('[PlaytimeDetector] session-started', { title: game.title, startedAt, cmd: command })
           windows[0].webContents.send('game:session-started', { game, startedAt })
         }
+        try { this.hooks.onSessionStart?.({ game, startedAt }) } catch {}
       }
     } catch (e) {
       console.error('Failed to send session-started:', e)
@@ -84,6 +97,7 @@ export class PlaytimeService {
     } catch (e) {
       console.error('Failed to send session-ended:', e)
     }
+    try { this.hooks.onSessionEnd?.({ game, durationMs, reason }) } catch {}
   }
 
   buildLaunchCommand(game) {
@@ -208,7 +222,7 @@ export class PlaytimeService {
     try {
       if (platform === 'win32') {
         const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-        const scriptPath = path.join(base, 'scripts', 'proc.py')
+        const scriptPath = path.join(base, 'tools', 'proc.py')
         const filters = JSON.stringify({
           executablePath: game.executablePath || '',
           installDir: game.installDir || '',
@@ -247,7 +261,7 @@ export class PlaytimeService {
     return await new Promise((resolve) => {
       try {
         const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-        const scriptPath = path.join(base, 'scripts', 'proc.py')
+        const scriptPath = path.join(base, 'tools', 'proc.py')
         const filters = JSON.stringify({
           executablePath: game.executablePath || '',
           installDir: game.installDir || '',
@@ -320,7 +334,7 @@ export class PlaytimeService {
     if (!waitingLogged) { waitingLogged = true; log('Waiting For Process') }
     const runPythonJson = (args) => new Promise((resolve) => {
       const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-      const scriptPath = path.join(base, 'scripts', 'proc.py')
+      const scriptPath = path.join(base, 'tools', 'proc.py')
       const tryRun = (cmd) => {
         const py = spawn(cmd, [scriptPath, ...args], { stdio: ['ignore', 'pipe', 'ignore'] })
         let out = ''
@@ -353,6 +367,7 @@ export class PlaytimeService {
           log('session-started (on first PID match)', { title: game.title, startedAt })
           windows[0].webContents.send('game:session-started', { game, startedAt })
           emittedStart = true
+          try { this.hooks.onSessionStart?.({ game, startedAt }) } catch {}
         }
       } catch (e) {
         console.error('Failed to send session-started (Windows PID match):', e)

@@ -7,7 +7,7 @@ async function ensureDirs() {
     'src/renderer/ui',
     'src/main/services/detection',
     'src/main/services/tracking',
-    'scripts',
+    'tools',
     'src/types'
   ]
   for (const d of dirs) {

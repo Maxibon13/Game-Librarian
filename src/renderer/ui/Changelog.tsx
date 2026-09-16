@@ -84,14 +84,14 @@ export function Changelog({ onClose }: Props) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={onClose} data-nav-root>
       <div className="changelog-card" role="dialog" aria-label="Changelog" onClick={(e) => e.stopPropagation()}>
         <div className="changelog-title">Changelog</div>
         <div className="changelog-content md-github" aria-live="polite" dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(text) }}>
         </div>
         <div className="changelog-actions">
-          <button className="btn" onClick={openRepo}>Open repository</button>
-          <button className="btn btn-primary" onClick={onClose}>Close</button>
+          <button className="btn btn-ghost" data-nav onClick={openRepo}>Open repository</button>
+          <button className="btn btn-accent" data-nav data-nav-default onClick={onClose}>Close</button>
         </div>
       </div>
     </div>

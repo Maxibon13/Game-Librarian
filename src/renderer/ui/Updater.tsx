@@ -93,7 +93,7 @@ export function Updater({ onReady }: { onReady: () => void }) {
                   const res = await (window as any).electronAPI.installUpdateAndExit()
                   if (!res?.ok) {
                     const msg = res?.error ? String(res.error) : 'Unknown error'
-                    alert('Failed to start installer. ' + msg + '\nYou can run scripts/WinInstaller.bat manually.')
+                    alert('Failed to start installer. ' + msg + '\nYou can run installer/Installer.exe manually.')
                   }
                 } catch (e) {
                   alert('Failed to start installer: ' + (e as any)?.message)
@@ -108,7 +108,7 @@ export function Updater({ onReady }: { onReady: () => void }) {
           </>
         )}
         {state.phase === 'upToDate' && (
-          <div className="updater-note">You are up to date (v{state.localVersion}).</div>
+          <div className="updater-note">You are up to date ({state.localVersion}).</div>
         )}
         {state.phase === 'error' && (
           <div className="updater-note" style={{ color: '#ff9e9e' }}>Update check failed: {state.message}</div>

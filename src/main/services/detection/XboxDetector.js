@@ -21,7 +21,7 @@ export class XboxDetector {
     try {
       const { spawn } = await import('node:child_process')
       const base = (await import('electron')).app?.isPackaged ? process.resourcesPath : process.cwd()
-      const script = path.join(base, 'scripts', 'xbox_detect.py')
+      const script = path.join(base, 'tools', 'xbox_detect.py')
       try { console.log('[Detector:Xbox]: Using script:', script) } catch {}
       const run = (cmd) => new Promise((resolve) => {
         try { console.log('[Detector:Xbox]: Trying interpreter:', cmd) } catch {}

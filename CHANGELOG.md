@@ -1,5 +1,12 @@
 # Changelog
 
+## (1.0) 160926 - Pre
+- Console UI overhaul (Fluent/Xbox shell, portrait covers, gamepad navigation, Windows shell integrations)
+- Installer/Uninstaller redesigned to match the app: glass panels, step checklist, real progress, collapsible log
+- Installer registers `Uninstaller.exe` directly in Apps & features; uninstaller can optionally clear settings/playtime
+- Repo layout: `assets/{icons,sounds}`, `tools/` (runtime helpers, was `scripts/`), `installer/` (shipped exes; `installer/src` and `dev/` are local-only)
+- Added `installer/src/build_installers.ps1` to rebuild the installer, uninstaller and launcher
+
 ## Beta 2.5 (v7.5)
 - Added App Fastloading
 - Added Cacheing refresh for fastloader

@@ -53,7 +53,7 @@ export class EpicDetector {
     // Attempts to run scripts/SteamApi_Search.py to resolve an image URL
     try {
       const base = (await import('electron')).app?.isPackaged ? process.resourcesPath : process.cwd()
-      const scriptPath = path.join(base, 'scripts', 'SteamApi_Search.py')
+      const scriptPath = path.join(base, 'tools', 'SteamApi_Search.py')
       const candidates = [
         ['python', [scriptPath, '--game', gameTitle]],
         ['py', [scriptPath, '--game', gameTitle]]

@@ -1,12 +1,17 @@
-import { app, BrowserWindow, ipcMain, shell, nativeImage, dialog } from 'electron'
-import https from 'node:https'
+import { app, BrowserWindow, ipcMain, shell, nativeImage, dialog, globalShortcut, Menu } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fetchRemoteVersion, isUpdateAvailable, versionFromPayload } from './version.js'
 import { GameDetectionService } from '../src/main/services/detection/GameDetectionService.js'
 import { PlaytimeService } from '../src/main/services/tracking/PlaytimeService.js'
 import { SettingsService } from '../src/main/services/settings/SettingsService.js'
 import { FastloadService } from '../src/main/services/detection/FastloadService.js'
 import { SteamDetector } from '../src/main/services/detection/SteamDetector.js'
+import { CoverCache } from './covers.js'
+import {
+  APP_USER_MODEL_ID, TrayController, createStartMenuShortcut, gameKey, notifySessionEnd,
+  parsePlayRequest, registerProtocol, setInGame, supportsMica, updateJumpList
+} from './windows.js'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import { spawn } from 'node:child_process'
@@ -16,17 +21,152 @@ const __dirname = path.dirname(__filename)
 
 let mainWindow = null
 let appIcon = null
+let appIconPath = null
 const detectionService = new GameDetectionService()
 let playtimeService = null
 let settingsService = null
 let fastloadService = null
+let coverCache = null
+let tray = null
 let backendInitialized = false
 let lastVersionJsonPath = null
 let debugLogBuffer = []
 let debugLogMax = 1000
+let lastGames = []
+let libraryMeta = { firstSeen: {}, createdAt: 0 }
+let pendingPlay = null
+let quitting = false
 
 const APP_NAME = 'Game Librarian'
 const APP_REPOSITORY = 'https://github.com/Maxibon13/Game-Librarian'
+const isWin = process.platform === 'win32'
+
+// Single instance: second launches forward argv (jump list / protocol) here.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', (_e, argv) => {
+    const req = parsePlayRequest(argv)
+    if (req) void playByRequest(req)
+    showMainWindow()
+  })
+}
+app.on('open-url', (_e, url) => {
+  const req = parsePlayRequest([url])
+  if (req) void playByRequest(req)
+})
+if (isWin) app.setAppUserModelId(APP_USER_MODEL_ID)
+
+function showMainWindow() {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) { void createWindow(); return }
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    if (!mainWindow.isVisible()) mainWindow.show()
+    mainWindow.focus()
+  } catch {}
+}
+
+function sendToRenderer(channel, payload) {
+  for (const bw of BrowserWindow.getAllWindows()) {
+    try { bw.webContents.send(channel, payload) } catch {}
+  }
+}
+
+async function playByRequest(req) {
+  if (!req) return
+  if (!backendInitialized || lastGames.length === 0) { pendingPlay = req; return }
+  const game = lastGames.find((g) => String(g.launcher) === String(req.launcher) && String(g.id) === String(req.id))
+  if (!game) { console.warn('[Play] no game for request', req); return }
+  pendingPlay = null
+  sendToRenderer('game:launch-requested', game)
+  try { await playtimeService.launchGameAndTrack(game) } catch (e) { console.warn('[Play] launch failed', String(e)) }
+}
+
+function libraryMetaPath() {
+  return path.join(app.getPath('userData'), 'library-meta.json')
+}
+
+async function loadLibraryMeta() {
+  try {
+    const raw = await fs.readFile(libraryMetaPath(), 'utf8')
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed.firstSeen === 'object') libraryMeta = { firstSeen: parsed.firstSeen, createdAt: parsed.createdAt || 0 }
+  } catch {}
+}
+
+// Stamps `addedAt` per game so Home can show a "Recently added" rail.
+async function stampAddedAt(games) {
+  const now = Date.now()
+  const firstRun = !libraryMeta.createdAt
+  if (firstRun) libraryMeta.createdAt = now
+  let dirty = firstRun
+  for (const g of games) {
+    const k = gameKey(g)
+    if (!libraryMeta.firstSeen[k]) { libraryMeta.firstSeen[k] = now; dirty = true }
+  }
+  if (dirty) {
+    try { await fs.writeFile(libraryMetaPath(), JSON.stringify(libraryMeta), 'utf8') } catch {}
+  }
+  // Games stamped during the very first scan have no meaningful "added" date.
+  return games.map((g) => {
+    const ts = libraryMeta.firstSeen[gameKey(g)] || now
+    return { ...g, addedAt: ts === libraryMeta.createdAt ? undefined : ts }
+  })
+}
+
+function decorateGames(games) {
+  const customTitles = settingsService?.get()?.customTitles || {}
+  return games.map((g) => {
+    const k = gameKey(g)
+    const custom = customTitles[k]
+    const original = g.originalTitle || g.title
+    return {
+      ...g,
+      title: custom || original,
+      originalTitle: original,
+      playtimeMinutes: playtimeService.getPlaytimeMinutes(g),
+      lastPlayedAt: playtimeService.getLastPlayedAt(g)
+    }
+  })
+}
+
+function publishGames(games) {
+  lastGames = games
+  try { updateJumpList(games) } catch {}
+  try { tray?.setRecent(games) } catch {}
+  if (pendingPlay) void playByRequest(pendingPlay)
+}
+
+// Settings hotkeys use "Ctrl+Shift+K" style; Electron wants accelerators.
+function toAccelerator(combo) {
+  const parts = String(combo || '').split('+').map((p) => p.trim()).filter(Boolean)
+  if (parts.length === 0) return null
+  const map = { Ctrl: 'CommandOrControl', Control: 'CommandOrControl', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', ' ': 'Space', Escape: 'Esc' }
+  const out = parts.map((p) => map[p] || (p.length === 1 ? p.toUpperCase() : p))
+  const hasKey = out.some((p) => !['CommandOrControl', 'Shift', 'Alt', 'Super'].includes(p))
+  return hasKey ? out.join('+') : null
+}
+
+function applyGlobalHotkeys() {
+  try { globalShortcut.unregisterAll() } catch {}
+  const hk = settingsService?.get()?.hotkeys || {}
+  const bind = (combo, fn) => {
+    const acc = toAccelerator(combo)
+    if (!acc) return
+    try { globalShortcut.register(acc, fn) } catch (e) { console.warn('[Hotkeys] failed', acc, String(e)) }
+  }
+  bind(hk.openApp, () => showMainWindow())
+  bind(hk.quickSearch, () => { showMainWindow(); sendToRenderer('ui:focus-search', null) })
+}
+
+function titleBarOverlayFor(settings) {
+  const chrome = settings?.ui?.chrome || {}
+  return {
+    color: chrome.titleBarColor || '#0b0d10',
+    symbolColor: chrome.titleBarSymbolColor || '#ffffff',
+    height: 40
+  }
+}
 // Resolve Version.Json depending on dev vs packaged
 function getVersionJsonCandidatePaths() {
   const candidates = []
@@ -54,7 +194,7 @@ async function getLocalVersionDetailed() {
       if (p && fsSync.existsSync(p)) {
         const raw = await fs.readFile(p, 'utf8')
         const data = JSON.parse(raw)
-        const v = data?.version
+        const v = versionFromPayload(data)
         if (v) {
           lastVersionJsonPath = p
           try { console.log('[Version] Using Version.Json at', p, 'version', v) } catch {}
@@ -86,67 +226,6 @@ function parseOwnerRepo(repoUrl) {
   return { owner: 'Maxibon13', repo: 'Game-Librarian' }
 }
 
-function compareNumericVersions(local, remote) {
-  const li = Number.parseFloat(String(local ?? '0'))
-  const ri = Number.parseFloat(String(remote ?? '0'))
-  if (Number.isNaN(li) || Number.isNaN(ri)) return 0
-  return li - ri
-}
-
-async function fetchRemoteVersionStrict(rawUrl) {
-  // Try fetch with explicit headers and timeout, then fallback to https module
-  const tryFetch = async () => {
-    try {
-      const ac = new AbortController()
-      const t = setTimeout(() => ac.abort(), 10000)
-      const res = await fetch(rawUrl, {
-        headers: {
-          'User-Agent': 'GameLibrarian-Updater',
-          'Accept': 'application/json',
-          'Cache-Control': 'no-cache'
-        },
-        cache: 'no-store',
-        signal: ac.signal
-      })
-      clearTimeout(t)
-      if (!res.ok) throw new Error(String(res.status))
-      const json = await res.json()
-      const v = String(json?.version ?? '').trim()
-      return v || null
-    } catch {
-      return null
-    }
-  }
-  const viaHttps = async () => {
-    return await new Promise((resolve) => {
-      try {
-        const req = https.get(rawUrl, {
-          headers: {
-            'User-Agent': 'GameLibrarian-Updater',
-            'Accept': 'application/json',
-            'Cache-Control': 'no-cache'
-          }
-        }, (res) => {
-          if (res.statusCode !== 200) { try { res.resume() } catch {} ; return resolve(null) }
-          const chunks = []
-          res.on('data', (d) => chunks.push(d))
-          res.on('end', () => {
-            try {
-              const body = Buffer.concat(chunks).toString('utf8')
-              const json = JSON.parse(body)
-              const v = String(json?.version ?? '').trim()
-              resolve(v || null)
-            } catch { resolve(null) }
-          })
-        })
-        req.setTimeout(10000, () => { try { req.destroy(new Error('timeout')) } catch {} })
-        req.on('error', () => resolve(null))
-      } catch { resolve(null) }
-    })
-  }
-  return (await tryFetch()) || (await viaHttps())
-}
-
 // Attempt to stop the Vite dev server to clean up the dev console (Windows only)
 async function stopDevViteIfRunning() {
   try {
@@ -165,37 +244,19 @@ async function stopDevViteIfRunning() {
 }
 
 async function checkForUpdate() {
-  // Delegate to batch script for all repository access; JS only normalizes values
+  const local = String(await getLocalVersion() ?? '')
   try {
-    const { spawn } = await import('node:child_process')
-    const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-    const scriptPath = path.join(base, 'scripts', 'updater.bat')
-    const p = spawn('cmd.exe', ['/c', scriptPath, 'check'], { stdio: ['ignore','pipe','ignore'] })
-    let out = ''
-    await new Promise((resolve) => {
-      p.stdout.on('data', (d) => out += d.toString())
-      p.on('close', () => resolve())
-      p.on('error', () => resolve())
-    })
-    try {
-      const parsed = JSON.parse(out || '{}')
-      if (parsed && parsed.ok !== undefined) {
-        // Ensure decimal compare normalization in JS as a safety net
-        const li = String(parsed.localVersion ?? '0')
-        const ri = String(parsed.remoteVersion ?? '0')
-        parsed.updateAvailable = compareNumericVersions(li, ri) < 0
-        parsed.localVersion = li
-        parsed.remoteVersion = ri
-        parsed.repository = APP_REPOSITORY
-        return parsed
-      }
-    } catch {}
+    const { owner, repo } = parseOwnerRepo(APP_REPOSITORY)
+    const remote = await fetchRemoteVersion(owner, repo)
+    if (!remote) {
+      return { ok: false, error: 'could not read Version.Json from repository', localVersion: local, remoteVersion: '', repository: APP_REPOSITORY, updateAvailable: false }
+    }
+    const updateAvailable = isUpdateAvailable(local, remote)
+    try { console.log('[Updater] versions', { local, remote, updateAvailable }) } catch {}
+    return { ok: true, updateAvailable, localVersion: local, remoteVersion: remote, repository: APP_REPOSITORY }
   } catch (e) {
-    return { ok: false, error: String(e) }
+    return { ok: false, error: String(e), localVersion: local, remoteVersion: '', repository: APP_REPOSITORY, updateAvailable: false }
   }
-  // Hard fallback: attempt direct, though expected path is batch above
-  const li = await getLocalVersion()
-  return { ok: true, updateAvailable: false, localVersion: li, remoteVersion: '0', repository: APP_REPOSITORY }
 }
 
 async function registerIpcAndServices() {
@@ -203,7 +264,36 @@ async function registerIpcAndServices() {
   playtimeService = new PlaytimeService(app.getPath('userData'))
   settingsService = new SettingsService(app.getPath('userData'))
   fastloadService = new FastloadService(app.getPath('userData'))
+  coverCache = new CoverCache(path.join(app.getPath('userData'), 'covers'))
   await settingsService.load()
+  await coverCache.init()
+  await loadLibraryMeta()
+  applyGlobalHotkeys()
+
+  // Taskbar / toast integration driven by playtime sessions
+  playtimeService.hooks = {
+    onSessionStart: ({ game }) => {
+      setInGame(mainWindow, game, { icon: appIcon, onForceQuit: (g) => { try { playtimeService.forceQuit(g) } catch {} } })
+    },
+    onSessionEnd: ({ game, durationMs }) => {
+      setInGame(mainWindow, null)
+      const notify = settingsService.get()?.windows?.notifications !== false
+      if (notify && durationMs > 0) notifySessionEnd(game, durationMs, { icon: appIcon, onClick: showMainWindow })
+      // Refresh recents in jump list / tray
+      publishGames(decorateGames(lastGames))
+      sendToRenderer('games:updated', lastGames)
+    }
+  }
+
+  if (isWin && !tray) {
+    tray = new TrayController({
+      icon: appIcon,
+      onShow: showMainWindow,
+      onPlay: (g) => playByRequest({ launcher: g.launcher, id: g.id }),
+      onQuit: () => { quitting = true; app.quit() }
+    })
+    tray.create()
+  }
 
   // Install debug console forwarder once
   try {
@@ -245,34 +335,102 @@ async function registerIpcAndServices() {
     } else {
       // Cache loaded, update in background
       console.log('[Fastload] Cache loaded, updating in background')
+      sendToRenderer('games:refreshing', true)
       setImmediate(async () => {
         try {
           const freshGames = await detectionService.detectAll(settingsService.get())
           await fastloadService.saveGames(freshGames)
           console.log('[Fastload] Background update completed')
-          // Notify UI that games have been updated (with playtime data)
-          const gamesWithPlaytime = freshGames.map((g) => ({ 
-            ...g, 
-            playtimeMinutes: playtimeService.getPlaytimeMinutes(g), 
-            lastPlayedAt: playtimeService.getLastPlayedAt(g) 
-          }))
-          for (const bw of BrowserWindow.getAllWindows()) {
-            try { bw.webContents.send('games:updated', gamesWithPlaytime) } catch {}
-          }
+          const decorated = decorateGames(await stampAddedAt(freshGames))
+          publishGames(decorated)
+          sendToRenderer('games:updated', decorated)
         } catch (error) {
           console.warn('[Fastload] Background update failed:', error.message)
+        } finally {
+          sendToRenderer('games:refreshing', false)
         }
       })
     }
 
     console.log(`[Fastload] Returning ${games.length} games`)
-    // Add playtime data to games
-    return games.map((g) => ({ 
-      ...g, 
-      playtimeMinutes: playtimeService.getPlaytimeMinutes(g), 
-      lastPlayedAt: playtimeService.getLastPlayedAt(g) 
-    }))
+    const decorated = decorateGames(await stampAddedAt(games))
+    publishGames(decorated)
+    return decorated
   })
+
+  ipcMain.handle('games:rescan', async () => {
+    sendToRenderer('games:refreshing', true)
+    try {
+      const fresh = await detectionService.detectAll(settingsService.get())
+      await fastloadService.saveGames(fresh)
+      const decorated = decorateGames(await stampAddedAt(fresh))
+      publishGames(decorated)
+      return decorated
+    } finally {
+      sendToRenderer('games:refreshing', false)
+    }
+  })
+
+  ipcMain.handle('games:setCustomTitle', async (_e, { launcher, id, title }) => {
+    const current = settingsService.get()
+    const customTitles = { ...(current.customTitles || {}) }
+    const k = `${launcher}:${id}`
+    const next = String(title || '').trim()
+    if (next) customTitles[k] = next
+    else delete customTitles[k]
+    await settingsService.save({ ...current, customTitles })
+    lastGames = decorateGames(lastGames)
+    publishGames(lastGames)
+    sendToRenderer('games:updated', lastGames)
+    return true
+  })
+
+  ipcMain.handle('session:active', async () => {
+    const active = playtimeService.activeSessions()
+    return active.map((s) => ({ ...s, game: lastGames.find((g) => gameKey(g) === s.key) || null }))
+  })
+
+  // Cover art: resolve remote URLs to a disk-cached file URL
+  ipcMain.handle('covers:resolve', async (_e, url) => {
+    try { return await coverCache.resolve(url) } catch { return String(url || '') }
+  })
+  ipcMain.handle('covers:clear', async () => { try { await coverCache.clear(); return true } catch { return false } })
+
+  // Windows shell integrations
+  ipcMain.handle('shell:createStartShortcut', async (_e, game) => createStartMenuShortcut(game, { iconPath: appIconPath }))
+  ipcMain.handle('hotkeys:apply', async () => { applyGlobalHotkeys(); return true })
+
+  // Window chrome
+  ipcMain.handle('window:getChrome', async () => ({
+    platform: process.platform,
+    mica: isWin && supportsMica() && settingsService.get()?.ui?.mica !== false,
+    micaSupported: supportsMica(),
+    fullscreen: !!mainWindow?.isFullScreen(),
+    maximized: !!mainWindow?.isMaximized(),
+    titleBarHeight: 40
+  }))
+  ipcMain.handle('window:setTitleBarOverlay', async (_e, { color, symbolColor }) => {
+    try {
+      if (isWin && mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitleBarOverlay({ color, symbolColor, height: 40 })
+      const current = settingsService.get()
+      await settingsService.save({ ...current, ui: { ...(current.ui || {}), chrome: { titleBarColor: color, titleBarSymbolColor: symbolColor } } })
+      return true
+    } catch { return false }
+  })
+  ipcMain.handle('window:toggleFullscreen', async (_e, force) => {
+    if (!mainWindow) return false
+    const next = typeof force === 'boolean' ? force : !mainWindow.isFullScreen()
+    mainWindow.setFullScreen(next)
+    return next
+  })
+  ipcMain.handle('window:minimize', async () => { mainWindow?.minimize(); return true })
+  ipcMain.handle('window:toggleMaximize', async () => {
+    if (!mainWindow) return false
+    if (mainWindow.isMaximized()) mainWindow.unmaximize(); else mainWindow.maximize()
+    return mainWindow.isMaximized()
+  })
+  ipcMain.handle('window:close', async () => { mainWindow?.close(); return true })
+  ipcMain.handle('app:quit', async () => { quitting = true; app.quit(); return true })
 
   ipcMain.handle('game:launch', async (_e, game) => {
     try { console.log('[IPC] game:launch', { launcher: game?.launcher, title: game?.title, id: game?.id, aumid: game?.aumid }) } catch {}
@@ -437,6 +595,7 @@ async function registerIpcAndServices() {
   ipcMain.handle('settings:save', async (_e, next) => {
     const current = settingsService.get()
     await settingsService.save(next)
+    if (JSON.stringify(current?.hotkeys) !== JSON.stringify(next?.hotkeys)) applyGlobalHotkeys()
     
     // Only clear fastload cache when game detection related settings change
     const shouldClearCache = 
@@ -492,20 +651,30 @@ async function createWindow() {
   if (!appIcon) {
     try {
       // Resolve icon for both dev and packaged
-      const devIcon = path.join(process.cwd(), 'Icon.png')
-      const asarIcon = path.join(__dirname, '../Icon.png')
-      const resIcon = path.join(process.resourcesPath || '', 'Icon.png')
-      const candidates = [devIcon, asarIcon, resIcon]
+      const rel = path.join('assets', 'icons', 'Icon.png')
+      const candidates = [path.join(process.cwd(), rel), path.join(__dirname, '..', rel), path.join(process.resourcesPath || '', rel)]
       for (const p of candidates) {
-        if (p && fsSync.existsSync(p)) { appIcon = nativeImage.createFromPath(p); break }
+        if (p && fsSync.existsSync(p)) { appIcon = nativeImage.createFromPath(p); appIconPath = p; break }
       }
     } catch {}
   }
   const isDev = !app.isPackaged
+  // Settings may not be loaded yet (updater screen runs before backend:init); read the file directly.
+  let earlySettings = {}
+  try { earlySettings = JSON.parse(fsSync.readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8')) } catch {}
+  const useMica = isWin && supportsMica() && earlySettings?.ui?.mica !== false
+
+  Menu.setApplicationMenu(null)
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1360,
+    height: 860,
+    minWidth: 960,
+    minHeight: 600,
+    show: false,
     icon: appIcon || undefined,
+    backgroundColor: useMica ? '#00000000' : '#0b0d10',
+    ...(isWin ? { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlayFor(earlySettings) } : { titleBarStyle: 'hiddenInset' }),
+    ...(useMica ? { backgroundMaterial: 'mica' } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -514,6 +683,38 @@ async function createWindow() {
       // Allow loading file:/// images/resources when UI runs from http://localhost in dev
       webSecurity: isDev ? false : true,
       allowRunningInsecureContent: isDev ? true : false
+    }
+  })
+  mainWindow.once('ready-to-show', () => { try { mainWindow.show() } catch {} })
+  if (isDev) {
+    mainWindow.webContents.on('console-message', (_e, level, message) => {
+      if (level >= 2) console.log('[Renderer]', message)
+    })
+  }
+
+  // Menu is removed; keep devtools + fullscreen keys alive.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    const ctrlShiftI = input.control && input.shift && String(input.key).toLowerCase() === 'i'
+    if (input.key === 'F12' || ctrlShiftI) {
+      event.preventDefault()
+      if (mainWindow.webContents.isDevToolsOpened()) mainWindow.webContents.closeDevTools()
+      else mainWindow.webContents.openDevTools({ mode: 'detach' })
+    }
+  })
+  const emitWindowState = () => sendToRenderer('window:state', { fullscreen: mainWindow.isFullScreen(), maximized: mainWindow.isMaximized() })
+  mainWindow.on('enter-full-screen', emitWindowState)
+  mainWindow.on('leave-full-screen', emitWindowState)
+  mainWindow.on('maximize', emitWindowState)
+  mainWindow.on('unmaximize', emitWindowState)
+
+  // Close to tray (opt-in) so sessions keep tracking with the window hidden
+  mainWindow.on('close', (e) => {
+    if (quitting) return
+    const closeToTray = !!settingsService?.get()?.windows?.closeToTray
+    if (isWin && closeToTray && tray?.tray) {
+      e.preventDefault()
+      mainWindow.hide()
     }
   })
 
@@ -554,61 +755,12 @@ app.whenReady().then(async () => {
     const det = await getLocalVersionDetailed()
     return det
   })
-  ipcMain.handle('updater:check', async () => {
-    // Prefer bundled batch updater on Windows; otherwise fallback to JS
-    if (process.platform === 'win32') {
-      try {
-        const base = app && app.isPackaged ? process.resourcesPath : process.cwd()
-        const scriptPath = path.join(base, 'scripts', 'updater.bat')
-        const p = spawn('cmd.exe', ['/c', scriptPath, 'check'], { stdio: ['ignore','pipe','ignore'] })
-        let out = ''
-        await new Promise((resolve) => {
-          p.stdout.on('data', (d) => out += d.toString())
-          p.on('close', () => resolve())
-          p.on('error', () => resolve())
-        })
-        try {
-          const parsed = JSON.parse(out || '{}')
-          if (parsed && parsed.ok !== undefined) {
-            // Normalize localVersion to our JS-detected value to avoid discrepancies
-            try {
-              const jsLocal = await getLocalVersion()
-              parsed.localVersion = jsLocal
-              // If batch failed to resolve a proper remote version, fall back to JS fetch
-              let remote = String(parsed.remoteVersion || '')
-              if (!remote || remote === '0.0.0') {
-                try {
-                  const { owner, repo } = parseOwnerRepo(APP_REPOSITORY)
-                  const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/Version.Json`
-                  const fetched = await fetchRemoteVersionStrict(rawUrl)
-                  if (fetched) {
-                    remote = String(fetched)
-                    parsed.remoteVersion = remote
-                  }
-                } catch {}
-              }
-              // Recompute availability using numeric policy (remote > local)
-              try {
-                const li = Number.parseFloat(String(jsLocal ?? '0')) || 0
-                const ri = Number.parseFloat(String(remote ?? '0')) || 0
-                parsed.updateAvailable = ri > li
-              } catch {}
-            } catch {}
-            try { console.log('[Updater] versions', { local: parsed.localVersion, remote: parsed.remoteVersion, updateAvailable: parsed.updateAvailable, source: 'batch+normalized(+js-remote-if-missing)' }) } catch {}
-            return parsed
-          }
-        } catch {}
-      } catch {}
-    }
-    const fb = await checkForUpdate()
-    try { console.log('[Updater] versions', { local: fb.localVersion, remote: fb.remoteVersion, updateAvailable: fb.updateAvailable, source: 'fallback-js' }) } catch {}
-    return fb
-  })
+  ipcMain.handle('updater:check', async () => checkForUpdate())
   ipcMain.handle('updater:run', async () => {
     try {
       const isDev = !app.isPackaged
       const base = isDev ? process.cwd() : process.resourcesPath
-      const scriptPath = path.join(base, 'scripts', 'updater.bat')
+      const scriptPath = path.join(base, 'tools', 'updater.bat')
       const env = { ...process.env }
       // Ensure desired install root: in dev update in-place, in prod install beside app under "Game Librarian"
       const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
@@ -626,7 +778,7 @@ app.whenReady().then(async () => {
     try {
       const isDev = !app.isPackaged
       const base = isDev ? process.cwd() : process.resourcesPath
-      const scriptPath = path.join(base, 'scripts', 'updater.bat')
+      const scriptPath = path.join(base, 'tools', 'updater.bat')
       const env = { ...process.env }
       const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
       env.INSTALL_DIR = desired
@@ -660,67 +812,21 @@ app.whenReady().then(async () => {
     try {
       const isDev = !app.isPackaged
       const base = isDev ? process.cwd() : process.resourcesPath
-      const scriptDir = path.join(base, 'scripts')
-      const exeInstaller = path.join(scriptDir, 'Installer.exe')
-      const pyGuiCandidates = [ path.join(scriptDir, 'installer_gui.pyw'), path.join(scriptDir, 'installer_gui.py') ]
-      const pyGui = pyGuiCandidates.find((p) => { try { return fsSync.existsSync(p) } catch { return false } })
-      const installerBat = path.join(scriptDir, 'WinInstaller.bat')
-      const env = { ...process.env }
-      const desired = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
-      env.INSTALL_DIR = desired
-      // Prefer Python GUI if available; fallback to batch
+      const installerDir = path.join(base, 'installer')
+      const exeInstaller = path.join(installerDir, 'Installer.exe')
+      const pyGui = path.join(installerDir, 'src', 'installer_gui.pyw')
+      const env = { ...process.env, GL_LAUNCHED_FROM_APP: '1' }
+      env.INSTALL_DIR = isDev ? base : path.join(path.join(base, '..'), 'Game Librarian')
+      // Launch via 'start' so the GUI is detached from the Electron process group and
+      // survives the app quitting right after spawning.
+      const launch = (cwd, ...args) => spawn('cmd.exe', ['/c', 'start', '""', ...args], { cwd, env, detached: true, windowsHide: false, stdio: 'ignore' })
       let child
       if (fsSync.existsSync(exeInstaller)) {
-        try {
-          child = spawn('cmd.exe', ['/c', 'start', '""', 'Installer.exe'], {
-            cwd: scriptDir,
-            env: { ...env, GL_LAUNCHED_FROM_APP: '1' },
-            detached: true,
-            windowsHide: false,
-            stdio: 'ignore'
-          })
-        } catch {}
-      } else if (pyGui) {
-        // Launch via 'start' so the GUI is fully detached from the Electron process group.
-        // This avoids premature termination when the app quits right after spawning.
-        try {
-          child = spawn('cmd.exe', ['/c', 'start', '""', 'python', path.basename(pyGui)], {
-            cwd: scriptDir,
-            env: { ...env, GL_LAUNCHED_FROM_APP: '1' },
-            detached: true,
-            windowsHide: false,
-            stdio: 'ignore'
-          })
-        } catch {
-          try {
-            child = spawn('cmd.exe', ['/c', 'start', '""', 'py', path.basename(pyGui)], {
-              cwd: scriptDir,
-              env: { ...env, GL_LAUNCHED_FROM_APP: '1' },
-              detached: true,
-              windowsHide: false,
-              stdio: 'ignore'
-            })
-          } catch {
-            // fallback to batch
-            child = spawn('cmd.exe', ['/c', 'start', '""', 'WinInstaller.bat'], {
-              cwd: scriptDir,
-              env: { ...env, GL_LAUNCHED_FROM_APP: '1' },
-              detached: true,
-              windowsHide: false,
-              stdio: 'ignore'
-            })
-          }
-        }
+        child = launch(installerDir, 'Installer.exe')
+      } else if (fsSync.existsSync(pyGui)) {
+        child = launch(path.dirname(pyGui), 'py', '-3', path.basename(pyGui))
       } else {
-        // Verify batch exists, then launch
-        try { if (!fsSync.existsSync(installerBat)) throw new Error('Installer not found at ' + installerBat) } catch (e) { return { ok: false, error: String(e) } }
-        child = spawn('cmd.exe', ['/c', 'start', '""', 'WinInstaller.bat'], {
-          cwd: scriptDir,
-          env: { ...env, GL_LAUNCHED_FROM_APP: '1' },
-          detached: true,
-          windowsHide: false,
-          stdio: 'ignore'
-        })
+        return { ok: false, error: 'Installer not found at ' + exeInstaller }
       }
       child.unref()
       // In dev, stop Vite to clean up the console instead of quitting the app.
@@ -737,11 +843,19 @@ app.whenReady().then(async () => {
     }
   })
   ipcMain.handle('backend:init', async () => { await registerIpcAndServices(); return { ok: true } })
+  registerProtocol()
+  pendingPlay = parsePlayRequest(process.argv)
   await createWindow()
 })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => { quitting = true })
+app.on('will-quit', () => {
+  try { globalShortcut.unregisterAll() } catch {}
+  try { tray?.destroy() } catch {}
 })
 
 app.on('activate', () => {

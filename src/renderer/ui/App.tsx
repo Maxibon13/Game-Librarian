@@ -1,575 +1,385 @@
-import React, { useEffect, useState } from 'react'
-import { GameCard } from './GameCard'
+import React from 'react'
+import type { Game, Session, Settings, SortOrder, Tab, ViewMode, WindowChrome } from '../lib/types'
+import { gameKey } from '../lib/types'
+import { api } from '../lib/api'
+import { applyTheme } from '../lib/theme'
+import { configureAudio, playSound } from '../lib/audio'
+import { focusFirst, isTextInput, moveFocus } from '../nav/spatial'
+import { useGamepad, type NavAction } from '../nav/useGamepad'
+import { TitleBar } from '../components/TitleBar'
+import { SideRail } from '../components/SideRail'
+import { NowPlayingDock } from '../components/NowPlayingDock'
+import { ButtonLegend } from '../components/ButtonLegend'
+import { InfoToast, SessionEndedToast, StartingToast } from '../components/Toasts'
+import { HomeView } from '../views/HomeView'
+import { LibraryView } from '../views/LibraryView'
+import { GameDetails } from '../views/GameDetails'
+import { SettingsView } from '../views/SettingsView'
 import { SessionOverlay } from './SessionOverlay'
-const sounds = {
-  normal: {
-    launch: new URL('../../sounds/launch.ogg', import.meta.url).href,
-    open: new URL('../../sounds/open.ogg', import.meta.url).href,
-    close: new URL('../../sounds/close.ogg', import.meta.url).href
-  },
-  alt: {
-    launch: new URL('../../sounds/launch_alt.ogg', import.meta.url).href,
-    open: new URL('../../sounds/open_alt.ogg', import.meta.url).href,
-    close: new URL('../../sounds/close_alt.ogg', import.meta.url).href
-  }
-} as const
-import { Settings } from './Settings'
-import { SessionEndedCard } from './SessionEndedCard'
-import GameMenuOverlay from './GameMenuOverlay'
-import { ThemeSelect } from './ThemeSelect'
 import { Changelog } from './Changelog'
 
-export type Game = {
-  id: string
-  title: string
-  launcher: 'steam' | 'epic' | string
-  installDir?: string
-  executablePath?: string
-  args?: string[]
-  playtimeMinutes?: number
-  lastPlayedAt?: number
+export type { Game } from '../lib/types'
+
+function normalizeView(v: any): ViewMode {
+  if (v === 'large' || v === 'grid') return 'grid'
+  if (v === 'small' || v === 'compact') return 'compact'
+  if (v === 'list') return 'list'
+  return 'grid'
 }
 
 export function App() {
-  const [games, setGames] = useState<Game[]>([])
-  const [tab, setTab] = useState<'library' | 'settings'>('library')
-  const [loading, setLoading] = useState(false)
-  const [session, setSession] = useState<{ game: Game; startedAt: number } | null>(null)
-  const [starting, setStarting] = useState<{ game: Game } | null>(null)
-  const [ended, setEnded] = useState<{ game: Game; durationMs: number } | null>(null)
-  const [menu, setMenu] = useState<{ game: Game } | null>(null)
-  const [viewMode, setViewMode] = useState<'large' | 'small' | 'list'>('large')
-  const [sortOrder, setSortOrder] = useState<'az' | 'za' | 'playtime-desc' | 'playtime-asc'>('az')
-  const [query, setQuery] = useState('')
-  const [modeAnim, setModeAnim] = useState(false)
-  const [audioEnabled, setAudioEnabled] = useState(true)
-  const [masterVolume, setMasterVolume] = useState(1)
-  const [audioProfile, setAudioProfile] = useState<'normal' | 'alt'>('normal')
-  const [appVersion, setAppVersion] = useState<string | null>(null)
-  const [theme, setTheme] = useState<string>('dark')
-  const [showChangelog, setShowChangelog] = useState(false)
-  // Controller UI temporarily disabled
-  useEffect(() => {
-    // Controller detection temporarily disabled
-    const api = (window as any).electronAPI
-    if (api?.listGames) {
-      setLoading(true)
-      api
-        .listGames()
-        .then(setGames)
-        .catch(() => setGames([]))
-        .finally(() => setLoading(false))
-    }
+  const [games, setGames] = React.useState<Game[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [refreshing, setRefreshing] = React.useState(false)
+  const [settings, setSettings] = React.useState<Settings | null>(null)
+  const [chrome, setChrome] = React.useState<WindowChrome | null>(null)
+  const [appVersion, setAppVersion] = React.useState<string | null>(null)
+  const [fullscreen, setFullscreen] = React.useState(false)
 
-    if (api?.onSessionStart) {
-      api.onSessionStart((payload: any) => {
-        console.log('Session started:', payload)
-        setStarting(null)
-        setSession(payload)
-      })
-    }
-    if (api?.onSessionEnd) {
-      api.onSessionEnd((payload: any) => {
-        console.log('Session ended')
-        setSession(null)
-        setStarting(null)
-        if (payload?.game && typeof payload?.durationMs === 'number') {
-          setEnded({ game: payload.game, durationMs: payload.durationMs })
-        }
-      })
-    }
-    
-    if (api?.onGamesUpdated) {
-      api.onGamesUpdated((_event: any, updatedGames: Game[]) => {
-        console.log('Games updated from background cache refresh')
-        setGames(updatedGames)
-      })
-    }
+  const [tab, setTab] = React.useState<Tab>('home')
+  const [detailsKey, setDetailsKey] = React.useState<string | null>(null)
+  const [query, setQuery] = React.useState('')
+  const [launcherFilter, setLauncherFilter] = React.useState<string | null>(null)
+  const [viewMode, setViewMode] = React.useState<ViewMode>('grid')
+  const [sortOrder, setSortOrder] = React.useState<SortOrder>('az')
 
-    // Load UI/audio preferences
-    if (api?.getSettings) {
-      api.getSettings().then((s: any) => {
-        const ui = s?.ui || {}
-        if (ui.viewMode === 'large' || ui.viewMode === 'small' || ui.viewMode === 'list') {
-          setViewMode(ui.viewMode)
-        }
-        if (ui.sort === 'az' || ui.sort === 'za' || ui.sort === 'playtime-desc' || ui.sort === 'playtime-asc') {
-          setSortOrder(ui.sort)
-        }
-        const audio = s?.audio || {}
-        setAudioEnabled(audio.enabled !== false)
-        const mv = typeof audio.masterVolume === 'number' ? audio.masterVolume : 1
-        setMasterVolume(Math.max(0, Math.min(1, mv)))
-        if (audio.profile === 'alt' || audio.profile === 'normal') setAudioProfile(audio.profile)
-        ;(window as any)._glAudioProfile = (audio.profile === 'alt' || audio.profile === 'normal') ? audio.profile : 'normal'
-        // Theme
-        const tn = s?.theme?.name || 'dark'
-        setTheme(tn)
-        applyPresetTheme(tn)
-      }).catch(() => {})
-    }
+  const [session, setSession] = React.useState<Session | null>(null)
+  const [starting, setStarting] = React.useState<Game | null>(null)
+  const [ended, setEnded] = React.useState<{ game: Game; durationMs: number } | null>(null)
+  const [focusMode, setFocusMode] = React.useState(false)
+  const [toast, setToast] = React.useState<string | null>(null)
+  const [showChangelog, setShowChangelog] = React.useState(false)
 
-    // Load app version for watermark
-    if (api?.getAppConfig) {
-      api.getAppConfig().then((cfg: any) => {
-        const v = cfg?.appVersion
-        if (typeof v === 'string' && v.length > 0) setAppVersion(v)
-      }).catch(() => {})
-    }
-    return () => {}
+  const scrollRef = React.useRef<HTMLElement>(null)
+  const searchRef = React.useRef<HTMLInputElement>(null)
+  const settingsRef = React.useRef<Settings | null>(null)
+  settingsRef.current = settings
+
+  /* ---------- boot ---------- */
+  React.useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const [s, c, cfg] = await Promise.all([api.getSettings(), api.getWindowChrome(), api.getAppConfig()])
+      if (!alive) return
+      if (c) { setChrome(c); setFullscreen(!!c.fullscreen) }
+      if (cfg?.appVersion) setAppVersion(String(cfg.appVersion))
+      if (s) {
+        setSettings(s)
+        setViewMode(normalizeView(s.ui?.viewMode))
+        if (s.ui?.sort) setSortOrder(s.ui.sort)
+        configureAudio({ enabled: s.audio?.enabled !== false, volume: s.audio?.masterVolume ?? 1, profile: s.audio?.profile || 'normal' })
+        applyTheme(s.theme?.name || 'dark', { mica: !!c?.mica, platform: c?.platform })
+        document.documentElement.dataset.reduceMotion = s.ui?.reduceMotion ? '1' : '0'
+      } else {
+        applyTheme('dark', { mica: !!c?.mica, platform: c?.platform })
+      }
+      const list = await api.listGames()
+      if (!alive) return
+      setGames(Array.isArray(list) ? list : [])
+      setLoading(false)
+      const active = await api.getActiveSessions()
+      if (alive && active && active.length > 0 && active[0].game) setSession({ game: active[0].game, startedAt: active[0].startedAt })
+    })()
+
+    api.onGamesUpdated((list) => { if (Array.isArray(list)) setGames(list) })
+    api.onGamesRefreshing((busy) => setRefreshing(busy))
+    api.onSessionStart((p) => { setStarting(null); setSession(p) })
+    api.onSessionEnd((p) => {
+      setSession(null)
+      setStarting(null)
+      setFocusMode(false)
+      if (p?.game && typeof p.durationMs === 'number') {
+        if (p.durationMs > 0) setEnded({ game: p.game, durationMs: p.durationMs })
+        else setToast(`Could not detect ${p.game.title} running. Playtime was not recorded.`)
+      }
+    })
+    api.onLaunchRequested((g) => { if (g) setStarting(g) })
+    api.onFocusSearch(() => { setDetailsKey(null); setTab('library'); requestAnimationFrame(() => searchRef.current?.focus()) })
+    api.onWindowState((s) => setFullscreen(!!s.fullscreen))
+    return () => { alive = false }
   }, [])
 
-  function applyPresetTheme(name: string) {
-    const root = document.documentElement
-    if (name === 'light') {
-      root.style.setProperty('--bg', '#f5f6f8')
-      root.style.setProperty('--panel', '#ffffff')
-      root.style.setProperty('--panel-2', '#f2f4f8')
-      root.style.setProperty('--text', '#0b0c10')
-      root.style.setProperty('--muted', '#4a5568')
-      root.style.setProperty('--brand', '#3b82f6')
-      root.style.setProperty('--brand-2', '#2563eb')
-      root.style.setProperty('--glow', '#60a5fa')
-      root.style.setProperty('color-scheme', 'light')
-    } else if (name === 'neon-blue') {
-      // Brighter blues with noticeable panel gradient
-      root.style.setProperty('--bg', '#101a3a')
-      root.style.setProperty('--panel', '#16244d')
-      root.style.setProperty('--panel-2', '#1b2b5f')
-      root.style.setProperty('--text', '#eaf2ff')
-      root.style.setProperty('--muted', '#bcd0ff')
-      root.style.setProperty('--brand', '#39a7ff')
-      root.style.setProperty('--brand-2', '#7cc8ff')
-      root.style.setProperty('--glow', '#66d1ff')
-      root.style.setProperty('color-scheme', 'dark')
-    } else if (name === 'neon-red') {
-      // Brighter reds with warm gradient
-      root.style.setProperty('--bg', '#2a1014')
-      root.style.setProperty('--panel', '#3a151a')
-      root.style.setProperty('--panel-2', '#47181e')
-      root.style.setProperty('--text', '#ffecef')
-      root.style.setProperty('--muted', '#f7b3be')
-      root.style.setProperty('--brand', '#ff4d6d')
-      root.style.setProperty('--brand-2', '#ff7a8e')
-      root.style.setProperty('--glow', '#ff8fa3')
-      root.style.setProperty('color-scheme', 'dark')
-    } else if (name === 'neon-green') {
-      // Brighter greens with cool gradient
-      root.style.setProperty('--bg', '#0f2a1a')
-      root.style.setProperty('--panel', '#153a24')
-      root.style.setProperty('--panel-2', '#1a4a2e')
-      root.style.setProperty('--text', '#eafff3')
-      root.style.setProperty('--muted', '#b8e6c9')
-      root.style.setProperty('--brand', '#2bff88')
-      root.style.setProperty('--brand-2', '#6affb2')
-      root.style.setProperty('--glow', '#8dffca')
-      root.style.setProperty('color-scheme', 'dark')
-    } else if (name === 'orange-sunrise') {
-      root.style.setProperty('--bg', '#120b07')
-      root.style.setProperty('--panel', '#1b0f09')
-      root.style.setProperty('--panel-2', '#160d0a')
-      root.style.setProperty('--text', '#ffeadd')
-      root.style.setProperty('--muted', '#f7c8a8')
-      root.style.setProperty('--brand', '#ff8a00')
-      root.style.setProperty('--brand-2', '#ff5d00')
-      root.style.setProperty('--glow', '#ffb347')
-      root.style.setProperty('color-scheme', 'dark')
-    } else if (name === 'purple-galaxy') {
-      root.style.setProperty('--bg', '#0e0a1f')
-      root.style.setProperty('--panel', '#140f2b')
-      root.style.setProperty('--panel-2', '#120d27')
-      root.style.setProperty('--text', '#efe6ff')
-      root.style.setProperty('--muted', '#c2b5e8')
-      root.style.setProperty('--brand', '#8b5cf6')
-      root.style.setProperty('--brand-2', '#7c3aed')
-      root.style.setProperty('--glow', '#a78bfa')
-      root.style.setProperty('color-scheme', 'dark')
-    } else if (name === 'sea-breeze') {
-      root.style.setProperty('--bg', '#081417')
-      root.style.setProperty('--panel', '#0b1c21')
-      root.style.setProperty('--panel-2', '#0a181d')
-      root.style.setProperty('--text', '#e6fbff')
-      root.style.setProperty('--muted', '#a8dbe6')
-      root.style.setProperty('--brand', '#00d5ff')
-      root.style.setProperty('--brand-2', '#00b0d4')
-      root.style.setProperty('--glow', '#6ee7ff')
-      root.style.setProperty('color-scheme', 'dark')
-    } else {
-      // dark default
-      root.style.setProperty('--bg', '#0c0d10')
-      root.style.setProperty('--panel', '#14161b')
-      root.style.setProperty('--panel-2', '#171a20')
-      root.style.setProperty('--text', '#e6e7eb')
-      root.style.setProperty('--muted', '#b1b6c3')
-      root.style.setProperty('--brand', '#6b7cff')
-      root.style.setProperty('--brand-2', '#5a69e6')
-      root.style.setProperty('--glow', '#3b82f6')
-      root.style.setProperty('color-scheme', 'dark')
+  /* ---------- settings ---------- */
+  const patchSettings = React.useCallback(async (patch: Partial<Settings>) => {
+    const current = settingsRef.current || (await api.getSettings()) || ({} as Settings)
+    const next: Settings = { ...current, ...patch } as Settings
+    for (const k of Object.keys(patch) as (keyof Settings)[]) {
+      const a = (current as any)[k], b = (patch as any)[k]
+      if (a && b && typeof a === 'object' && typeof b === 'object' && !Array.isArray(a) && !Array.isArray(b)) (next as any)[k] = { ...a, ...b }
+    }
+    setSettings(next)
+    settingsRef.current = next
+    await api.saveSettings(next)
+    if (patch.theme) applyTheme(next.theme?.name || 'dark', { mica: !!chrome?.mica, platform: chrome?.platform })
+    if (patch.audio) configureAudio({ enabled: next.audio?.enabled !== false, volume: next.audio?.masterVolume ?? 1, profile: next.audio?.profile || 'normal' })
+    if (patch.ui) {
+      document.documentElement.dataset.reduceMotion = next.ui?.reduceMotion ? '1' : '0'
+      if (patch.ui.viewMode) setViewMode(normalizeView(patch.ui.viewMode))
+    }
+  }, [chrome])
+
+  const changeView = (v: ViewMode) => { setViewMode(v); void patchSettings({ ui: { ...(settingsRef.current?.ui || {} as any), viewMode: v } }) }
+  const changeSort = (s: SortOrder) => { setSortOrder(s); void patchSettings({ ui: { ...(settingsRef.current?.ui || {} as any), sort: s } }) }
+
+  /* ---------- derived ---------- */
+  const gamesByKey = React.useMemo(() => {
+    const m = new Map<string, Game>()
+    for (const g of games) m.set(gameKey(g), g)
+    return m
+  }, [games])
+  const detailsGame = detailsKey ? gamesByKey.get(detailsKey) || null : null
+  const playingKey = session ? gameKey(session.game) : null
+
+  const libraryGames = React.useMemo(() => {
+    const byTitle = (a: Game, b: Game) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
+    const q = query.trim().toLowerCase()
+    let list = games
+    if (launcherFilter) list = list.filter((g) => g.launcher === launcherFilter)
+    if (q) list = list.filter((g) => (g.title || '').toLowerCase().includes(q) || (g.originalTitle || '').toLowerCase().includes(q))
+    list = list.slice()
+    switch (sortOrder) {
+      case 'za': return list.sort(byTitle).reverse()
+      case 'recent': return list.sort((a, b) => ((b.lastPlayedAt || 0) - (a.lastPlayedAt || 0)) || byTitle(a, b))
+      case 'playtime-desc': return list.sort((a, b) => ((b.playtimeMinutes || 0) - (a.playtimeMinutes || 0)) || byTitle(a, b))
+      case 'playtime-asc': return list.sort((a, b) => ((a.playtimeMinutes || 0) - (b.playtimeMinutes || 0)) || byTitle(a, b))
+      default: return list.sort(byTitle)
+    }
+  }, [games, query, launcherFilter, sortOrder])
+
+  /* ---------- actions ---------- */
+  const play = React.useCallback((g: Game) => {
+    if (session && gameKey(session.game) === gameKey(g)) { setToast(`${g.title} is already running`); return }
+    playSound('launch')
+    setStarting(g)
+    void api.launchGame(g)
+  }, [session])
+
+  const forceQuit = React.useCallback((g: Game) => { void api.forceQuit(g) }, [])
+
+  const openDetails = React.useCallback((g: Game) => {
+    playSound('open')
+    setDetailsKey(gameKey(g))
+  }, [])
+
+  const closeDetails = React.useCallback(() => {
+    const k = detailsKey
+    playSound('close')
+    setDetailsKey(null)
+    if (k) requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(`[data-game-key="${CSS.escape(k)}"]`)
+      if (el) el.focus({ preventScroll: false }); else focusFirst()
+    })
+  }, [detailsKey])
+
+  const goTab = React.useCallback((t: Tab, opts?: { launcher?: string | null }) => {
+    setDetailsKey(null)
+    setTab(t)
+    if (opts && 'launcher' in opts) setLauncherFilter(opts.launcher ?? null)
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
+  }, [])
+
+  const back = React.useCallback(() => {
+    if (showChangelog) { setShowChangelog(false); return }
+    if (focusMode) { setFocusMode(false); return }
+    if (detailsKey) { closeDetails(); return }
+    if (tab !== 'home') { goTab('home'); return }
+  }, [showChangelog, focusMode, detailsKey, closeDetails, tab, goTab])
+
+  const rescan = React.useCallback(async () => {
+    setRefreshing(true)
+    const list = await api.rescanGames()
+    if (Array.isArray(list)) setGames(list)
+    setRefreshing(false)
+  }, [])
+
+  const toggleFullscreen = React.useCallback(() => { void api.toggleFullscreen().then((v) => { if (typeof v === 'boolean') setFullscreen(v) }) }, [])
+
+  /* ---------- focus management ---------- */
+  React.useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      if (isTextInput(document.activeElement)) return
+      if (!detailsKey && tab === 'library' && document.activeElement && document.activeElement !== document.body) return
+      focusFirst()
+    })
+    return () => cancelAnimationFrame(id)
+  }, [tab, detailsKey, showChangelog])
+
+  /* ---------- input: gamepad ---------- */
+  const focusedGame = () => {
+    const el = document.activeElement as HTMLElement | null
+    const k = el?.closest<HTMLElement>('[data-game-key]')?.dataset.gameKey
+    return k ? gamesByKey.get(k) || null : null
+  }
+  const launcherOrder = React.useMemo(() => Array.from(new Set(games.map((g) => g.launcher))), [games])
+  const cycleLauncher = (dir: 1 | -1) => {
+    const order: (string | null)[] = [null, ...launcherOrder]
+    const i = order.indexOf(launcherFilter)
+    setLauncherFilter(order[(i + dir + order.length) % order.length])
+  }
+  const onGamepadAction = (a: NavAction) => {
+    switch (a) {
+      case 'up': case 'down': case 'left': case 'right': moveFocus(a); break
+      case 'accept': {
+        if (isTextInput(document.activeElement)) { (document.activeElement as HTMLElement).blur(); break }
+        const g = focusedGame()
+        if (g && !detailsKey) play(g)
+        else (document.activeElement as HTMLElement | null)?.click()
+        break
+      }
+      case 'back': back(); break
+      case 'details': { const g = focusedGame(); if (g) openDetails(g); break }
+      case 'alt': if (tab === 'library' && !detailsKey) searchRef.current?.focus(); break
+      case 'prevTab': if (tab === 'library' && !detailsKey) cycleLauncher(-1); else goTab(tab === 'settings' ? 'library' : 'home'); break
+      case 'nextTab': if (tab === 'library' && !detailsKey) cycleLauncher(1); else goTab(tab === 'home' ? 'library' : 'settings'); break
+      case 'menu': goTab(tab === 'settings' ? 'home' : 'settings'); break
+      case 'view': goTab('home'); break
     }
   }
+  const { connected: gamepadConnected } = useGamepad(onGamepadAction, true)
+  const gamepadSeen = React.useRef(false)
+  React.useEffect(() => {
+    if (gamepadConnected && !gamepadSeen.current) {
+      gamepadSeen.current = true
+      setToast('Controller connected')
+      if (settingsRef.current?.ui?.fullscreenOnGamepad && !fullscreen) void api.toggleFullscreen(true)
+      focusFirst()
+    }
+    if (!gamepadConnected) gamepadSeen.current = false
+  }, [gamepadConnected, fullscreen])
 
-  function resolveActiveCustom(t: any) {
-    if (t?.name === 'custom') return t
-    if (typeof t?.name === 'string' && t.name.startsWith('custom:')) {
-      const idx = Number(t.name.split(':')[1] || -1)
-      if (Array.isArray(t?.customs) && idx >= 0 && idx < t.customs.length) {
-        const picked = t.customs[idx]
-        return { ...t, custom: picked?.custom, customName: picked?.customName, name: 'custom' }
+  /* ---------- input: keyboard ---------- */
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'F11') { e.preventDefault(); toggleFullscreen(); return }
+      const inText = isTextInput(document.activeElement)
+      if (inText) {
+        if (e.key === 'Escape') (document.activeElement as HTMLElement).blur()
+        return
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      switch (e.key) {
+        case 'ArrowUp': case 'ArrowDown': case 'ArrowLeft': case 'ArrowRight': {
+          const dir = e.key.replace('Arrow', '').toLowerCase() as 'up' | 'down' | 'left' | 'right'
+          if (moveFocus(dir)) e.preventDefault()
+          break
+        }
+        case 'Escape': case 'Backspace': e.preventDefault(); back(); break
+        case '/': e.preventDefault(); if (tab !== 'library' || detailsKey) goTab('library'); requestAnimationFrame(() => searchRef.current?.focus()); break
+        case 'f': case 'F': { const g = focusedGame(); if (g && !detailsKey) { e.preventDefault(); openDetails(g) } break }
       }
     }
-    return t
-  }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
-  async function saveTheme(next: any) {
-    try {
-      const current = await (window as any).electronAPI.getSettings()
-      await (window as any).electronAPI.saveSettings({ ...current, theme: next })
-    } catch {}
-  }
+  /* ---------- render ---------- */
+  const legend = detailsGame
+    ? [{ glyph: 'A', label: session && playingKey === detailsKey ? 'Force quit' : 'Play' }, { glyph: 'B', label: 'Back' }]
+    : tab === 'settings'
+      ? [{ glyph: 'A', label: 'Select' }, { glyph: 'B', label: 'Home' }, { glyph: 'LB', label: 'Library' }]
+      : [{ glyph: 'A', label: 'Play' }, { glyph: 'Y', label: 'Details' }, { glyph: 'B', label: tab === 'home' ? 'Back' : 'Home' }, { glyph: 'LB', label: tab === 'library' ? 'Filter' : 'Tab' }, { glyph: 'RB', label: tab === 'library' ? 'Filter' : 'Tab' }, { glyph: '☰', label: 'Settings' }]
 
-  // Removed global UI button hover sound
-
-  const sortedGames = React.useMemo(() => {
-    const byTitle = (a: Game, b: Game) =>
-      (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
-    const byPlaytimeDesc = (a: Game, b: Game) => {
-      const ap = Math.max(0, a.playtimeMinutes ?? 0)
-      const bp = Math.max(0, b.playtimeMinutes ?? 0)
-      if (bp !== ap) return bp - ap
-      return byTitle(a, b)
-    }
-    const byPlaytimeAsc = (a: Game, b: Game) => {
-      const ap = Math.max(0, a.playtimeMinutes ?? 0)
-      const bp = Math.max(0, b.playtimeMinutes ?? 0)
-      if (ap !== bp) return ap - bp
-      return byTitle(a, b)
-    }
-    const filtered = query.trim().length > 0
-      ? games.filter((g) => (g.title || '').toLowerCase().includes(query.trim().toLowerCase()))
-      : games
-    const list = filtered.slice()
-    if (sortOrder === 'playtime-desc') return list.sort(byPlaytimeDesc)
-    if (sortOrder === 'playtime-asc') return list.sort(byPlaytimeAsc)
-    const titled = list.sort(byTitle)
-    return sortOrder === 'az' ? titled : titled.reverse()
-  }, [games, sortOrder, query])
-
-  async function changeView(next: 'large' | 'small' | 'list') {
-    setViewMode(next)
-    setModeAnim(true)
-    setTimeout(() => setModeAnim(false), 260)
-    try {
-      const current = await (window as any).electronAPI.getSettings()
-      await (window as any).electronAPI.saveSettings({ ...current, ui: { ...(current?.ui || {}), viewMode: next } })
-    } catch {}
-  }
-
-  async function changeSort(next: 'az' | 'za' | 'playtime-desc' | 'playtime-asc') {
-    setSortOrder(next)
-    try {
-      const current = await (window as any).electronAPI.getSettings()
-      await (window as any).electronAPI.saveSettings({ ...current, ui: { ...(current?.ui || {}), sort: next } })
-    } catch {}
-  }
+  const showFocusOverlay = !!session && (focusMode || !!settings?.ui?.sessionFocusMode)
 
   return (
-    <div className={`app ${tab === 'settings' ? 'is-settings' : ''}`}>
-      {/* Controller toast temporarily disabled */}
-      {session ? (
+    <div className={`shell ${fullscreen ? 'is-fullscreen' : ''} ${gamepadConnected ? 'has-gamepad' : ''}`}>
+      <TitleBar
+        tab={tab}
+        chrome={chrome}
+        fullscreen={fullscreen}
+        gamepadConnected={gamepadConnected}
+        refreshing={refreshing}
+        query={query}
+        onQuery={(q) => { setQuery(q); if (detailsKey) setDetailsKey(null); if (tab !== 'library') setTab('library') }}
+        onToggleFullscreen={toggleFullscreen}
+        searchRef={searchRef}
+        onSearchSubmit={() => focusFirst()}
+      />
+      <div className="shell-body">
+        <SideRail tab={tab} onTab={(t) => goTab(t)} count={games.length} version={appVersion} />
+        <main className="content" ref={scrollRef as React.RefObject<HTMLElement>}>
+          {detailsGame ? (
+            <GameDetails
+              game={detailsGame}
+              session={session && playingKey === detailsKey ? session : null}
+              starting={!!starting && gameKey(starting) === detailsKey}
+              onPlay={play}
+              onForceQuit={forceQuit}
+              onBack={closeDetails}
+              onToast={setToast}
+            />
+          ) : tab === 'home' ? (
+            <HomeView
+              games={games}
+              loading={loading}
+              playingKey={playingKey}
+              onPlay={play}
+              onOpen={openDetails}
+              onGoLibrary={(launcher) => goTab('library', { launcher: launcher ?? null })}
+              onGoSettings={() => goTab('settings')}
+              onRescan={rescan}
+            />
+          ) : tab === 'library' ? (
+            <LibraryView
+              games={libraryGames}
+              allGames={games}
+              query={query}
+              onClearQuery={() => setQuery('')}
+              viewMode={viewMode}
+              onViewMode={changeView}
+              sortOrder={sortOrder}
+              onSort={changeSort}
+              launcherFilter={launcherFilter}
+              onLauncherFilter={setLauncherFilter}
+              playingKey={playingKey}
+              refreshing={refreshing}
+              loading={loading}
+              onRescan={rescan}
+              onPlay={play}
+              onOpen={openDetails}
+              onGoSettings={() => goTab('settings')}
+              scrollRef={scrollRef}
+            />
+          ) : settings ? (
+            <SettingsView
+              settings={settings}
+              onPatch={patchSettings}
+              onRescan={rescan}
+              appVersion={appVersion}
+              chrome={chrome}
+              onOpenChangelog={() => setShowChangelog(true)}
+              onToast={setToast}
+            />
+          ) : null}
+        </main>
+      </div>
+
+      <ButtonLegend items={legend} visible={gamepadConnected} />
+
+      {session && !showFocusOverlay && (
+        <NowPlayingDock
+          session={session}
+          onForceQuit={() => forceQuit(session.game)}
+          onOpen={() => openDetails(session.game)}
+          onFocusMode={() => setFocusMode(true)}
+        />
+      )}
+      {showFocusOverlay && session && (
         <SessionOverlay
           game={session.game}
           startedAt={session.startedAt}
-          onForceQuit={() => (window as any).electronAPI.forceQuit(session.game)}
-        />
-      ) : (
-        <>
-          <header className="header">
-            <div className="left">
-              <h1>Game Librarian</h1>
-              <nav className="tabs">
-                <button className={tab === 'library' ? 'active' : ''} onClick={() => setTab('library')}>
-                  Library
-                </button>
-                <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>
-                  Settings
-                </button>
-                <button className="" onClick={() => setShowChangelog(true)} title="Changelog">
-                  Changelog
-                </button>
-              </nav>
-            </div>
-            {tab === 'library' && (
-              <div className="right">
-                <div className="controls">
-                  <ThemeSelect
-                    value={theme || 'dark'}
-                    onChange={async (name) => {
-                      setTheme(name)
-                      applyPresetTheme(name)
-                      try {
-                        const current = await (window as any).electronAPI.getSettings()
-                        await (window as any).electronAPI.saveSettings({ ...current, theme: { name } })
-                      } catch {}
-                    }}
-                    options={[
-                      { value: 'dark', label: 'Dark' },
-                      { value: 'light', label: 'Light' },
-                      { value: 'neon-blue', label: 'Neon Blue' },
-                      { value: 'neon-red', label: 'Neon Red' },
-                      { value: 'neon-green', label: 'Neon Green' },
-                      { value: 'orange-sunrise', label: 'Orange Sunrise' },
-                      { value: 'purple-galaxy', label: 'Purple Galaxy' },
-                      { value: 'sea-breeze', label: 'Sea Breeze' }
-                    ]}
-                  />
-                  <div className="group">
-                    <button
-                      className={viewMode === 'list' ? 'active' : ''}
-                      title="List view"
-                      onClick={() => changeView('list')}
-                    >List</button>
-                    <button
-                      className={viewMode === 'small' ? 'active' : ''}
-                      title="Small icons"
-                      onClick={() => changeView('small')}
-                    >Small</button>
-                    <button
-                      className={viewMode === 'large' ? 'active' : ''}
-                      title="Large icons"
-                      onClick={() => changeView('large')}
-                    >Large</button>
-                  </div>
-                  <select
-                    className="sort-select"
-                    value={sortOrder}
-                    onChange={(e) => changeSort(e.target.value as 'az' | 'za' | 'playtime-desc' | 'playtime-asc')}
-                    title="Sort order"
-                  >
-                    <option value="az">A → Z</option>
-                    <option value="za">Z → A</option>
-                    <option value="playtime-desc">Most played</option>
-                    <option value="playtime-asc">Least played</option>
-                  </select>
-                  <button
-                    className="refresh-btn"
-                    title="Refresh games"
-                    onClick={async () => {
-                      setLoading(true)
-                      try {
-                        setGames(await (window as any).electronAPI.listGames())
-                      } finally {
-                        setLoading(false)
-                      }
-                    }}
-                    disabled={loading}
-                  >
-                    ↻
-                  </button>
-                </div>
-              </div>
-            )}
-          </header>
-          {tab === 'library' && (
-            <div className="search-bar">
-              <input
-                type="text"
-                placeholder="Search games..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                aria-label="Search games"
-              />
-            </div>
-          )}
-          {tab === 'library' && (
-            <>
-              <RecentsRow
-                games={games}
-                onLaunch={(g) => onLaunch(g, setStarting, audioEnabled, masterVolume, audioProfile)}
-                onOpen={(g) => onOpenMenu(g, setMenu, audioEnabled, masterVolume, audioProfile)}
-                audioEnabled={audioEnabled}
-                masterVolume={masterVolume}
-                audioProfile={audioProfile}
-              />
-              <div className="section-divider" />
-            </>
-          )}
-          {loading && <div className="loading-bar" />}
-          <div key={tab} className="view animate-fade">
-            {tab === 'library' ? (
-              <main className={`grid ${viewMode} ${modeAnim ? 'view-switch-in' : ''}`}>
-                {sortedGames.map((g) => (
-                  <GameCard
-                    key={`${g.launcher}-${g.id}`}
-                    game={g}
-                    onLaunch={() => onLaunch(g, setStarting, audioEnabled, masterVolume, audioProfile)}
-                    audioEnabled={audioEnabled}
-                    masterVolume={masterVolume}
-                     audioProfile={audioProfile}
-                    onOpen={() => onOpenMenu(g, setMenu, audioEnabled, masterVolume, audioProfile)}
-                    variant={viewMode}
-                  />
-                ))}
-              </main>
-            ) : (
-              <Settings
-                audio={{ enabled: audioEnabled, masterVolume }}
-                audioProfile={audioProfile}
-                onAudioChange={async (next) => {
-                  setAudioEnabled(next.enabled)
-                  setMasterVolume(next.masterVolume)
-                  try {
-                    const current = await (window as any).electronAPI.getSettings()
-                    await (window as any).electronAPI.saveSettings({ ...current, audio: { ...(current?.audio||{}), ...next, profile: audioProfile } })
-                  } catch {}
-                }}
-                onAudioProfileChange={async (profile) => {
-                  setAudioProfile(profile)
-                  ;(window as any)._glAudioProfile = profile
-                  try {
-                    const current = await (window as any).electronAPI.getSettings()
-                    await (window as any).electronAPI.saveSettings({ ...current, audio: { ...(current?.audio||{}), enabled: audioEnabled, masterVolume, profile } })
-                  } catch {}
-                }}
-                onSaved={async () => {
-                  setLoading(true)
-                  try {
-                    setGames(await (window as any).electronAPI.listGames())
-                  } finally {
-                    setLoading(false)
-                  }
-                }}
-              />
-            )}
-          </div>
-        </>
-      )}
-
-      {starting && (
-        <div className="session-overlay starting">
-          <div className="session-content">
-            <div className="session-title">Waiting for app</div>
-            <div className="progress-bar">
-              <div className="bar" />
-            </div>
-            <div className="session-actions">
-              <button
-                className="btn"
-                onClick={() => {
-                  try { (window as any).electronAPI.forceQuit(starting.game) } catch {}
-                  setStarting(null)
-                }}
-              >Abort</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {ended && (
-        <SessionEndedCard
-          game={ended.game}
-          durationMs={ended.durationMs}
-          onClose={() => setEnded(null)}
+          onForceQuit={() => forceQuit(session.game)}
+          onMinimize={() => { setFocusMode(false); if (settings?.ui?.sessionFocusMode) void patchSettings({ ui: { ...(settings.ui as any), sessionFocusMode: false } }) }}
         />
       )}
 
-      {menu && (
-        <GameMenuOverlay
-          game={menu.game}
-          onClose={() => onCloseMenu(setMenu, audioEnabled, masterVolume, audioProfile)}
-          onLaunch={() => { onLaunch(menu.game, setStarting, audioEnabled, masterVolume, audioProfile); onCloseMenu(setMenu, audioEnabled, masterVolume, audioProfile) }}
-        />
-      )}
+      <div className="toasts">
+        {starting && !session && <StartingToast game={starting} onAbort={() => { forceQuit(starting); setStarting(null) }} />}
+        {ended && <SessionEndedToast game={ended.game} durationMs={ended.durationMs} onClose={() => setEnded(null)} onOpen={() => { openDetails(ended.game); setEnded(null) }} />}
+        {toast && <InfoToast text={toast} onClose={() => setToast(null)} />}
+      </div>
 
-      {appVersion && (
-        <div className="version-watermark" aria-hidden>
-          v{appVersion}
-        </div>
-      )}
       {showChangelog && <Changelog onClose={() => setShowChangelog(false)} />}
     </div>
   )
-}
-
-function RecentsRow({ games, onLaunch, onOpen, audioEnabled, masterVolume, audioProfile }: { games: Game[]; onLaunch: (g: Game) => void; onOpen: (g: Game) => void; audioEnabled: boolean; masterVolume: number; audioProfile: 'normal'|'alt' }) {
-  const MAX = 4
-  const recent = React.useMemo(() => {
-    const withTs = (games || []).filter(g => (g.lastPlayedAt || 0) > 0)
-    withTs.sort((a,b) => (b.lastPlayedAt||0) - (a.lastPlayedAt||0))
-    return withTs.slice(0, MAX)
-  }, [games])
-  if (recent.length === 0) return null
-  return (
-    <div className="recents-row">
-      <div className="recents-title">Recent</div>
-      <div className="recents-scroller">
-        {recent.map((g) => (
-          <div key={`${g.launcher}-${g.id}`} className="recents-item">
-            <GameCard
-              game={g}
-              onLaunch={() => onLaunch(g)}
-              onOpen={() => onOpen(g)}
-              variant="small"
-              audioEnabled={audioEnabled}
-              masterVolume={masterVolume}
-              audioProfile={audioProfile}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function onLaunch(
-  game: Game,
-  setStarting: (v: { game: Game }) => void,
-  audioEnabled: boolean,
-  masterVolume: number,
-  profile: 'normal' | 'alt'
-) {
-  if (audioEnabled) {
-    const src = sounds[profile]?.launch || sounds.normal.launch
-    const audio = new Audio(src)
-    audio.volume = 0.6 * Math.max(0, Math.min(1, masterVolume))
-    audio.preload = 'auto'
-    audio.play().catch(() => {})
-  }
-  // Controller-mode prompts temporarily disabled
-  setStarting({ game })
-  return (window as any).electronAPI.launchGame(game)
-}
-
-function onOpenMenu(
-  game: Game,
-  setMenu: (v: { game: Game } | null) => void,
-  audioEnabled: boolean,
-  masterVolume: number,
-  profile: 'normal' | 'alt'
-) {
-  try {
-    if (audioEnabled) {
-      const src = profile === 'alt' ? sounds.alt.open : sounds.normal.open
-      const audio = new Audio(src)
-      audio.volume = 0.6 * Math.max(0, Math.min(1, masterVolume))
-      audio.play().catch(() => {})
-    }
-  } catch {}
-  setMenu({ game })
-}
-
-function onCloseMenu(
-  setMenu: (v: { game: Game } | null) => void,
-  audioEnabled?: boolean,
-  masterVolume?: number,
-  profile: 'normal' | 'alt' = 'normal'
-) {
-  try {
-    if (audioEnabled) {
-      const src = profile === 'alt' ? sounds.alt.close : sounds.normal.close
-      const audio = new Audio(src)
-      const mv = Math.max(0, Math.min(1, masterVolume ?? 1))
-      audio.volume = 0.6 * mv
-      audio.play().catch(() => {})
-    }
-  } catch {}
-  setMenu(null)
 }

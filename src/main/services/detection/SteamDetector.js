@@ -284,7 +284,7 @@ export class SteamDetector {
     // Try 'python' and 'py' commands. Resolve script path for packaged build
     const extras = JSON.stringify(settings?.steam?.customLibraries || [])
     const base = (await import('electron')).app?.isPackaged ? process.resourcesPath : process.cwd()
-    const scriptPath = path.join(base, 'scripts', 'steam_detect.py')
+    const scriptPath = path.join(base, 'tools', 'steam_detect.py')
     const candidates = [
       ['python', [scriptPath, extras]],
       ['py', [scriptPath, extras]]
