@@ -3,12 +3,15 @@ import { api } from './api'
 import type { Game } from './types'
 
 // Cover URL selection: local/launcher-provided image first, Steam CDN for Steam ids.
-export function coverSource(game: Game, kind: 'portrait' | 'hero' = 'portrait'): string | null {
+export function coverSources(game: Game, kind: 'portrait' | 'hero' = 'portrait'): string[] {
   const isSteamId = game.launcher === 'steam' && /^\d+$/.test(String(game.id))
-  if (kind === 'hero' && isSteamId) return `https://steamcdn-a.akamaihd.net/steam/apps/${game.id}/library_hero.jpg`
-  if (game.image) return game.image
-  if (isSteamId) return `https://steamcdn-a.akamaihd.net/steam/apps/${game.id}/library_600x900.jpg`
-  return null
+  const base = `https://cdn.akamai.steamstatic.com/steam/apps/${game.id}`
+  return Array.from(new Set([
+    ...(kind === 'hero' && isSteamId ? [`${base}/library_hero.jpg`] : []),
+    game.image, ...(game.images || []),
+    ...(isSteamId ? [`${base}/library_600x900.jpg`, `${base}/library_600x900_2x.jpg`, `${base}/header.jpg`, `${base}/capsule_616x353.jpg`] : []),
+    game.icon
+  ].filter((url): url is string => !!url)))
 }
 
 const resolved = new Map<string, string>()
@@ -22,27 +25,26 @@ export function resolveCover(url: string): Promise<string> {
   if (p) return p
   const next = api.resolveCover(url).then((r) => {
     const out = r || url
-    resolved.set(url, out)
+    if (out !== url) resolved.set(url, out)
     return out
   }).finally(() => pending.delete(url))
   pending.set(url, next)
   return next
 }
 
-// Returns a disk-cached URL for the cover once available; falls back to the
-// remote URL immediately so the image can start loading.
-export function useCover(game: Game, kind: 'portrait' | 'hero' = 'portrait') {
-  const src = coverSource(game, kind)
-  const [url, setUrl] = React.useState<string | null>(() => (src ? resolved.get(src) || src : null))
+// Let the main process resolve/cache the candidate before rendering it. Otherwise
+// an immediate CDN 404 can skip a candidate while its metadata fallback is loading.
+export function useCover(src: string | null) {
+  const [result, setResult] = React.useState<{ src: string | null; url: string | null }>({ src: null, url: null })
   React.useEffect(() => {
     let alive = true
-    if (!src) { setUrl(null); return }
+    if (!src) return
     const cached = resolved.get(src)
-    setUrl(cached || src)
-    if (!cached) resolveCover(src).then((u) => { if (alive) setUrl(u) })
+    if (cached) setResult({ src, url: cached })
+    else resolveCover(src).then((url) => { if (alive) setResult({ src, url }) })
     return () => { alive = false }
   }, [src])
-  return url
+  return result.src === src ? result.url : (src && (resolved.get(src) || (!/^https?:/i.test(src) ? src : null)))
 }
 
 // Deterministic placeholder hue so games without art still look distinct.

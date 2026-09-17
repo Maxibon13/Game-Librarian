@@ -80,12 +80,16 @@ Python tools (`tools/*.py`) are stdlib-only and run on the embedded runtime (`sr
 Detectors
 ---------
 
-- Steam: libraries & manifests (with image cache/CDN fallbacks)
-- Epic: EGS manifests in ProgramData; launch via protocol (Windows)
+- Steam: registry install paths, modern/legacy library records, custom folders and bounded discovery across mounted drives; local artwork, CDN and current store-image fallbacks
+- Epic: EGS manifests from registry data paths, ProgramData and configured folders; launch via protocol (Windows)
 - Ubisoft: registry + default folders, Steam header image fallback
 - GOG: registry + custom libraries
 - Xbox (MS Store): registry + StartApps AUMID mapping; launched via AppsFolder
-- Roblox: protocol/launcher detection
+- Roblox: protocol/launcher detection with the installed executable's icon
+
+When a scan cannot locate any games, the app displays an error with an **Update launcher locations** shortcut to Settings → Library paths. Save changed paths there to rescan.
+
+Regression checks: `npm test` runs the detector and artwork-cache fixtures. `npm run test:ui` runs a hidden Electron window covering empty scans, location navigation, search filtering and image fallbacks. UI test artifacts are written to the ignored `dev/ui-smoke/` folder.
 
 Theming
 -------

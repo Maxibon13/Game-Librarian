@@ -14,7 +14,7 @@ import { InfoToast, SessionEndedToast, StartingToast } from '../components/Toast
 import { HomeView } from '../views/HomeView'
 import { LibraryView } from '../views/LibraryView'
 import { GameDetails } from '../views/GameDetails'
-import { SettingsView } from '../views/SettingsView'
+import { SettingsView, type SettingsSection } from '../views/SettingsView'
 import { SessionOverlay } from './SessionOverlay'
 import { Changelog } from './Changelog'
 
@@ -37,6 +37,8 @@ export function App() {
   const [fullscreen, setFullscreen] = React.useState(false)
 
   const [tab, setTab] = React.useState<Tab>('home')
+  const [settingsSection, setSettingsSection] = React.useState<SettingsSection>('appearance')
+  const [scanError, setScanError] = React.useState<string | null>(null)
   const [detailsKey, setDetailsKey] = React.useState<string | null>(null)
   const [query, setQuery] = React.useState('')
   const [launcherFilter, setLauncherFilter] = React.useState<string | null>(null)
@@ -76,12 +78,18 @@ export function App() {
       const list = await api.listGames()
       if (!alive) return
       setGames(Array.isArray(list) ? list : [])
+      setScanError(Array.isArray(list) ? (list.length ? null : 'Cannot locate any games.') : 'Unable to scan your game library.')
       setLoading(false)
       const active = await api.getActiveSessions()
       if (alive && active && active.length > 0 && active[0].game) setSession({ game: active[0].game, startedAt: active[0].startedAt })
     })()
 
-    api.onGamesUpdated((list) => { if (Array.isArray(list)) setGames(list) })
+    api.onGamesUpdated((list) => {
+      if (Array.isArray(list)) {
+        setGames(list)
+        setScanError(list.length ? null : 'Cannot locate any games.')
+      }
+    })
     api.onGamesRefreshing((busy) => setRefreshing(busy))
     api.onSessionStart((p) => { setStarting(null); setSession(p) })
     api.onSessionEnd((p) => {
@@ -185,10 +193,17 @@ export function App() {
     if (tab !== 'home') { goTab('home'); return }
   }, [showChangelog, focusMode, detailsKey, closeDetails, tab, goTab])
 
+  const goLibraryPaths = React.useCallback(() => {
+    setSettingsSection('library')
+    goTab('settings')
+  }, [goTab])
+
   const rescan = React.useCallback(async () => {
     setRefreshing(true)
+    setScanError(null)
     const list = await api.rescanGames()
     if (Array.isArray(list)) setGames(list)
+    setScanError(Array.isArray(list) ? (list.length ? null : 'Cannot locate any games.') : 'Unable to scan your game library.')
     setRefreshing(false)
   }, [])
 
@@ -298,6 +313,12 @@ export function App() {
       <div className="shell-body">
         <SideRail tab={tab} onTab={(t) => goTab(t)} count={games.length} version={appVersion} />
         <main className="content" ref={scrollRef as React.RefObject<HTMLElement>}>
+          {scanError && !loading && !refreshing && (
+            <div className="scan-error" role="alert">
+              <div><strong>{scanError}</strong><p>Check your launcher locations, then save and rescan.</p></div>
+              <button className="btn btn-accent" data-nav onClick={goLibraryPaths}>Update launcher locations</button>
+            </div>
+          )}
           {detailsGame ? (
             <GameDetails
               game={detailsGame}
@@ -311,12 +332,12 @@ export function App() {
           ) : tab === 'home' ? (
             <HomeView
               games={games}
-              loading={loading}
+              loading={loading || refreshing}
               playingKey={playingKey}
               onPlay={play}
               onOpen={openDetails}
               onGoLibrary={(launcher) => goTab('library', { launcher: launcher ?? null })}
-              onGoSettings={() => goTab('settings')}
+              onGoSettings={goLibraryPaths}
               onRescan={rescan}
             />
           ) : tab === 'library' ? (
@@ -333,15 +354,17 @@ export function App() {
               onLauncherFilter={setLauncherFilter}
               playingKey={playingKey}
               refreshing={refreshing}
-              loading={loading}
+              loading={loading || refreshing}
               onRescan={rescan}
               onPlay={play}
               onOpen={openDetails}
-              onGoSettings={() => goTab('settings')}
+              onGoSettings={goLibraryPaths}
               scrollRef={scrollRef}
             />
           ) : settings ? (
             <SettingsView
+              section={settingsSection}
+              onSectionChange={setSettingsSection}
               settings={settings}
               onPatch={patchSettings}
               onRescan={rescan}

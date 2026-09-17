@@ -7,6 +7,8 @@ export type Game = {
   executablePath?: string
   library?: string | null
   image?: string
+  images?: string[]
+  icon?: string
   args?: string[]
   playtimeMinutes?: number
   lastPlayedAt?: number

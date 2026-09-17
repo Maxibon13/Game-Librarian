@@ -3,12 +3,12 @@ import path from 'node:path'
 import os from 'node:os'
 import { parse } from 'vdf-extra'
 import fg from 'fast-glob'
-import { spawnSync } from 'node:child_process'
-import { pathToFileURL } from 'node:url'
-import { runPythonJson } from '../pythonRuntime.js'
+import { driveRoots, findSteamLibraries, registryValue } from './LibraryLocations.js'
+import { steamImages } from './SteamArtwork.js'
 
 export class SteamDetector {
-  constructor() {
+  constructor({ getDriveRoots = driveRoots } = {}) {
+    this.getDriveRoots = getDriveRoots
     this.type = 'steam'
     this.lastDebug = {
       steamPath: null,
@@ -22,36 +22,9 @@ export class SteamDetector {
 
   async detect(settings) {
     try { console.log('[Detector:Steam]: Initialising') } catch {}
-    // If Python is available, run the Python detector for higher accuracy
-    const pythonResult = await this.tryPythonDetector(settings)
-    if (pythonResult && pythonResult.games?.length) {
-      // Attach images for Steam appids when possible
-      const steamPath = await this.findSteamPath(settings)
-      const games = []
-      for (const g of pythonResult.games) {
-        const image = g.id && /^\d+$/.test(String(g.id)) && steamPath ? await this.resolveSteamImage(steamPath, String(g.id)) : undefined
-        const exe = await this.findLikelyExecutable(g.installDir)
-        games.push({ id: g.id, title: g.title, launcher: 'steam', installDir: g.installDir, library: g.library || null, image, executablePath: exe || undefined })
-      }
-      this.lastDebug = {
-        steamPath: steamPath || null,
-        libraryFoldersFile: steamPath ? path.join(steamPath, 'steamapps', 'libraryfolders.vdf') : null,
-        libraries: pythonResult.libraries || [],
-        scannedRoots: [],
-        manifests: games.map((g) => ({ id: g.id, title: g.title })),
-        errors: []
-      }
-      try { console.log(`[Detector:Steam]: Found Library at "${steamPath || ''}"`) } catch {}
-      try { console.log(`[Detector:Steam]: Found Games : ${JSON.stringify(games.map(g=>({id:g.id,title:g.title})))}`) } catch {}
-      try { console.log('[Detector:Steam]: Code ok') } catch {}
-      return games
-    }
-
     const steamPath = await this.findSteamPath(settings)
-    if (!steamPath) return []
-    const libraryFoldersVdf = path.join(steamPath, 'steamapps', 'libraryfolders.vdf')
-    this.lastDebug.steamPath = steamPath
-    this.lastDebug.libraryFoldersFile = libraryFoldersVdf
+    const libraryFoldersVdf = steamPath ? path.join(steamPath, 'steamapps', 'libraryfolders.vdf') : null
+    this.lastDebug = { steamPath, libraryFoldersFile: libraryFoldersVdf, libraries: [], scannedRoots: [], manifests: [], errors: [] }
 
     const librariesSet = new Set()
     const addLib = (p) => {
@@ -68,76 +41,29 @@ export class SteamDetector {
     // include custom libraries from settings (user-provided root, not steamapps)
     const custom = settings?.steam?.customLibraries || []
     for (const p of custom) addLib(p)
-    try {
-      const content = await fs.readFile(libraryFoldersVdf, 'utf8')
-      const parsed = parse(content)
-      // New style: libraryfolders: { "contentstatsid": "...", "1": { path: "..." }, ... }
-      // Some clients: libraryfolders: { paths: { "1": { path: "..." } } }
-      const folders = parsed?.libraryfolders || parsed?.LibraryFolders
-      if (folders?.paths && typeof folders.paths === 'object') {
-        for (const k of Object.keys(folders.paths)) addLib(folders.paths[k]?.path)
-      } else if (folders && typeof folders === 'object') {
-        for (const key of Object.keys(folders)) {
-          if (key === 'contentstatsid') continue
-          const entry = folders[key]
-          const p = (entry?.path || entry)?.toString?.() || ''
-          if (p) addLib(p)
-        }
-      }
-    } catch {}
-
-    // Fallback: for any custom root that is a drive root or generic folder, search shallowly for steamapps
-    const rootsToScan = new Set()
-    for (const p of custom) {
-      const normalized = path.normalize(p)
-      const parsedPath = path.parse(normalized)
-      if (normalized === parsedPath.root || /^[A-Za-z]:\\?$/.test(normalized)) {
-        rootsToScan.add(parsedPath.root)
-      } else {
-        // also scan inside the provided folder just in case user pointed at a parent
-        rootsToScan.add(normalized)
-      }
-    }
-    for (const root of rootsToScan) {
-      this.lastDebug.scannedRoots.push(root)
+    for (const config of steamPath ? [libraryFoldersVdf, path.join(steamPath, 'config', 'libraryfolders.vdf')] : []) {
       try {
-        const found = await fg('**/steamapps', {
-          cwd: root,
-          onlyDirectories: true,
-          absolute: true,
-          deep: 4,
-          suppressErrors: true,
-          dot: false
-        })
-        for (const d of found) librariesSet.add(path.normalize(d))
+        const content = await fs.readFile(config, 'utf8')
+        const parsed = parse(content, { mergeRoots: false, parseNumbers: false })
+        // New style: libraryfolders: { "contentstatsid": "...", "1": { path: "..." }, ... }
+        // Some clients: libraryfolders: { paths: { "1": { path: "..." } } }
+        const folders = parsed?.libraryfolders || parsed?.LibraryFolders
+        if (folders?.paths && typeof folders.paths === 'object') {
+          for (const k of Object.keys(folders.paths)) addLib(folders.paths[k]?.path)
+        } else if (folders && typeof folders === 'object') {
+          for (const key of Object.keys(folders)) {
+            if (!/^\d+$/.test(key)) continue
+            const entry = folders[key]
+            const p = (entry?.path || entry)?.toString?.() || ''
+            if (p) addLib(p)
+          }
+        }
       } catch {}
     }
-
-    // Global fallback: scan all drives for steamapps (Python parity)
-    const platform = os.platform()
-    if (platform === 'win32') {
-      const driveLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        .split('')
-        .map((l) => `${l}:\\`)
-      for (const drive of driveLetters) {
-        try {
-          await fs.access(drive)
-        } catch {
-          continue
-        }
-        try {
-          const found = await fg('**/steamapps', {
-            cwd: drive,
-            onlyDirectories: true,
-            absolute: true,
-            deep: 5,
-            suppressErrors: true,
-            ignore: ['**/Windows/**', '**/ProgramData/**', '**/$Recycle.Bin/**', '**/System Volume Information/**']
-          })
-          for (const d of found) librariesSet.add(path.normalize(d))
-        } catch {}
-      }
-    }
+    // Include detached libraries and custom installs even if Steam itself is absent.
+    const roots = [...custom, ...await this.getDriveRoots()]
+    this.lastDebug.scannedRoots = roots
+    for (const lib of await findSteamLibraries(roots)) librariesSet.add(path.normalize(lib))
 
     const games = []
     const libraries = Array.from(librariesSet)
@@ -150,16 +76,17 @@ export class SteamDetector {
         const manifestFiles = files.filter((f) => f.toLowerCase().startsWith('appmanifest') && f.toLowerCase().endsWith('.acf'))
         for (const file of manifestFiles) {
           try {
-            const app = parse(await fs.readFile(path.join(lib, file), 'utf8'))
+            const app = parse(await fs.readFile(path.join(lib, file), 'utf8'), { mergeRoots: false, parseNumbers: false })
             const appState = app?.AppState
             if (!appState) continue
             const id = appState.appid
             const name = appState.name
             const installDir = appState.installdir
             const commonDir = path.join(lib, 'common', installDir)
-            const image = await this.resolveSteamImage(steamPath, String(id))
+            const images = await steamImages(steamPath, String(id))
+            const image = images[0]
             const exe = await this.findLikelyExecutable(commonDir)
-            games.push({ id, title: name, launcher: 'steam', installDir: commonDir, image, executablePath: exe || undefined, library: lib })
+            games.push({ id, title: name, launcher: 'steam', installDir: commonDir, image, images, executablePath: exe || undefined, library: lib })
             this.lastDebug.manifests.push({ lib, file, id, title: name })
           } catch (e) {
             // Fallback to regex like the Python script to extract name
@@ -173,9 +100,10 @@ export class SteamDetector {
                 const name = nameMatch[1]
                 const installDir = installMatch[1]
                 const commonDir = path.join(lib, 'common', installDir)
-                const image = idMatch ? await this.resolveSteamImage(steamPath, String(id)) : undefined
+                const images = idMatch ? await steamImages(steamPath, String(id)) : []
+                const image = images[0]
                 const exe = await this.findLikelyExecutable(commonDir)
-                games.push({ id, title: name, launcher: 'steam', installDir: commonDir, image, executablePath: exe || undefined, library: lib })
+                games.push({ id, title: name, launcher: 'steam', installDir: commonDir, image, images, executablePath: exe || undefined, library: lib })
                 this.lastDebug.manifests.push({ lib, file, id, title: name })
               }
             } catch {}
@@ -204,18 +132,10 @@ export class SteamDetector {
         'HKLM/Software/Valve/Steam'
       ]
       for (const key of regPaths) {
-        try {
-          const { stdout } = spawnSync('reg', ['query', key.replaceAll('/', '\\'), '/v', 'SteamPath'], { encoding: 'utf8' })
-          const match = stdout && stdout.split('\n').find((l) => l.includes('SteamPath'))
-          if (match) {
-            const parts = match.trim().split(/\s{2,}/)
-            const p = parts[parts.length - 1]
-            if (p) {
-              await fs.access(p)
-              return p
-            }
-          }
-        } catch {}
+        for (const value of ['SteamPath', 'InstallPath']) {
+          const p = await registryValue(key.replaceAll('/', '\\'), value)
+          if (p) { try { await fs.access(p); return p } catch {} }
+        }
       }
 
       const local = process.env['ProgramFiles(x86)'] || process.env.ProgramFiles
@@ -244,34 +164,16 @@ export class SteamDetector {
     return null
   }
 
-  async resolveSteamImage(steamPath, appId) {
-    const cacheDir = path.join(steamPath, 'appcache', 'librarycache')
-    const candidates = [
-      `${appId}_library_600x900.jpg`,
-      `${appId}_library_600x900.png`,
-      `${appId}_header.jpg`,
-      `${appId}_header.png`,
-      `${appId}_capsule_616x353.jpg`,
-      `${appId}_capsule_616x353.png`
-    ]
-    for (const file of candidates) {
-      const candidatePath = path.join(cacheDir, file)
-      try { await fs.access(candidatePath); return pathToFileURL(candidatePath).href } catch {}
-    }
-    // Remote fallback via Steam CDN
-    return `https://steamcdn-a.akamaihd.net/steam/apps/${appId}/library_600x900.jpg`
-  }
-
   async findLikelyExecutable(folderPath) {
     try {
       const candidates = await fg(['**/*.exe'], {
         cwd: folderPath,
         absolute: true,
-        deep: 2,
+        deep: 4,
         suppressErrors: true
       })
       const bad = /(vcredist|dxsetup|directx|redist|depots|unins|crash|helper|support|_commonredist|eac|easyanticheat|installer)/i
-      const filtered = candidates.filter((p) => !bad.test(p))
+      const filtered = candidates.filter((p) => !bad.test(path.relative(folderPath, p)))
       // Prefer exe that matches folder name
       const base = path.basename(folderPath).toLowerCase()
       const preferred = filtered.find((p) => path.basename(p).toLowerCase().includes(base)) || filtered[0]
@@ -281,11 +183,4 @@ export class SteamDetector {
     }
   }
 
-  async tryPythonDetector(settings) {
-    const extras = JSON.stringify(settings?.steam?.customLibraries || [])
-    const parsed = await runPythonJson('steam_detect.py', [extras])
-    return parsed?.games ? parsed : null
-  }
 }
-
-

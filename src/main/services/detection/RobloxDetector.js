@@ -2,6 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
+import { registryValue } from './LibraryLocations.js'
 
 export class RobloxDetector {
   constructor() {
@@ -24,6 +25,12 @@ export class RobloxDetector {
     if (programFilesX86) candidates.push(path.join(programFilesX86, 'Roblox', 'Versions'))
 
     const exes = []
+    for (const key of ['HKCU\\Software\\Classes\\roblox-player\\shell\\open\\command', 'HKLM\\Software\\Classes\\roblox-player\\shell\\open\\command']) {
+      const command = await registryValue(key, '')
+      const exe = /^"([^"]+\.exe)"|^(.+?\.exe)(?:\s|$)/i.exec(command || '')
+      const executable = exe?.[1] || exe?.[2]
+      if (executable && fsSync.existsSync(executable)) exes.push(executable)
+    }
     for (const base of candidates) {
       try {
         const versions = await fs.readdir(base, { withFileTypes: true })
@@ -42,5 +49,4 @@ export class RobloxDetector {
     return []
   }
 }
-
 

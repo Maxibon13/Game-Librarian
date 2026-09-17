@@ -6,10 +6,12 @@ import { Select } from '../components/Select'
 import DebugConsoleView from '../ui/DebugConsoleView'
 import { IconFolder } from '../components/Icons'
 
-type Section = 'appearance' | 'library' | 'audio' | 'hotkeys' | 'windows' | 'advanced' | 'about'
+export type SettingsSection = 'appearance' | 'library' | 'audio' | 'hotkeys' | 'windows' | 'advanced' | 'about'
 
 type Props = {
   settings: Settings
+  section: SettingsSection
+  onSectionChange: (section: SettingsSection) => void
   onPatch: (patch: Partial<Settings>) => Promise<void>
   onRescan: () => void
   appVersion: string | null
@@ -18,7 +20,7 @@ type Props = {
   onToast: (text: string) => void
 }
 
-const SECTIONS: { id: Section; label: string }[] = [
+const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'library', label: 'Library paths' },
   { id: 'audio', label: 'Audio' },
@@ -28,13 +30,12 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'about', label: 'About' }
 ]
 
-export function SettingsView({ settings, onPatch, onRescan, appVersion, chrome, onOpenChangelog, onToast }: Props) {
-  const [section, setSection] = React.useState<Section>('appearance')
+export function SettingsView({ settings, section, onSectionChange, onPatch, onRescan, appVersion, chrome, onOpenChangelog, onToast }: Props) {
   return (
     <div className="view view-settings">
       <nav className="settings-nav" aria-label="Settings sections">
         {SECTIONS.map((s, i) => (
-          <button key={s.id} className={`settings-nav-item ${section === s.id ? 'is-active' : ''}`} data-nav {...(i === 0 ? { 'data-nav-default': true } : {})} onClick={() => setSection(s.id)}>
+          <button key={s.id} className={`settings-nav-item ${section === s.id ? 'is-active' : ''}`} data-nav {...(section === s.id ? { 'data-nav-default': true } : {})} onClick={() => onSectionChange(s.id)}>
             {s.label}
           </button>
         ))}
@@ -160,7 +161,7 @@ function LibraryPaths({ settings, onPatch, onRescan, onToast }: { settings: Sett
   return (
     <section>
       <h2>Library paths</h2>
-      <p className="section-lead">Leave a field empty to use the launcher's default location.</p>
+      <p className="section-lead">Launcher locations are detected automatically from installed launchers and library records. Steam also scans connected drives for libraries. Add a folder below if a location is missing.</p>
       <h3>Steam</h3>
       <PathField value={draft.steam.steamPath} placeholder="C:\Program Files (x86)\Steam" onChange={(v) => upd((d) => ({ ...d, steam: { ...d.steam, steamPath: v } }))} />
       {listField('steam', 'Additional Steam libraries', 'D:\\SteamLibrary')}

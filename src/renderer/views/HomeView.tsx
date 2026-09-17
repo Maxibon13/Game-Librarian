@@ -47,7 +47,7 @@ export function HomeView({ games, loading, playingKey, onPlay, onOpen, onGoLibra
           icon={<IconLibrary size={40} />}
           title="No games found yet"
           body="Game Librarian scans Steam, Epic, GOG, Ubisoft Connect and Xbox installs. If your launchers live somewhere unusual, point Settings at them and rescan."
-          action={{ label: 'Open settings', onClick: onGoSettings }}
+          action={{ label: 'Update launcher locations', onClick: onGoSettings }}
         />
         <div className="empty-secondary"><button className="btn btn-ghost" data-nav onClick={onRescan}>Rescan now</button></div>
       </div>

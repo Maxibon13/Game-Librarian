@@ -6,6 +6,9 @@ import { UbisoftDetector } from './UbisoftDetector.js'
 import { XboxDetector } from './XboxDetector.js'
 
 export class GameDetectionService {
+  constructor(resolveIcon = async () => undefined) {
+    this.resolveIcon = resolveIcon
+  }
   detectors = [new SteamDetector(), new EpicDetector(), new GOGDetector(), new UbisoftDetector(), new XboxDetector(), new RobloxDetector()]
 
   async detectAll(settings) {
@@ -16,7 +19,7 @@ export class GameDetectionService {
         const r = await d.detect(settings)
         results.push(...r)
       } catch (e) {
-        // ignore detector failures
+        console.warn(`[Detection] ${d.type || d.constructor.name} failed:`, e)
       }
     }
     // de-duplicate by launcher:id
@@ -24,8 +27,13 @@ export class GameDetectionService {
     for (const g of results) {
       map.set(`${g.launcher}:${g.id}`, g)
     }
-    return Array.from(map.values())
+    const games = Array.from(map.values())
+    // Executable icons are a local fallback, including Roblox and delisted games.
+    for (const game of games) {
+      if (!game.executablePath) continue
+      try { game.icon = await this.resolveIcon(game.executablePath) } catch {}
+    }
+    return games
   }
 }
-
 
