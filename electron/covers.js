@@ -3,6 +3,7 @@ import fsSync from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { pathToFileURL } from 'node:url'
+import { steamStoreImages } from '../src/main/services/detection/SteamArtwork.js'
 
 // Disk cache for remote cover art. Local file:// covers are returned untouched.
 export class CoverCache {
@@ -36,7 +37,7 @@ export class CoverCache {
     const p = this.enqueue(() => this.download(src, file))
       .then((ok) => {
         const out = ok ? pathToFileURL(file).href : src
-        this.mem.set(src, out)
+        if (ok) this.mem.set(src, out)
         return out
       })
       .finally(() => this.inflight.delete(src))
@@ -63,11 +64,20 @@ export class CoverCache {
   }
 
   async download(url, file) {
+    if (await this.downloadImage(url, file)) return true
+    // New Steam releases may only expose hashed image URLs through store metadata.
+    const steam = /^https:\/\/(?:steamcdn-a\.akamaihd\.net|cdn\.(?:akamai\.)?steamstatic\.com)\/steam\/apps\/(\d+)\//i.exec(url)
+    if (steam) {
+      for (const image of await steamStoreImages(steam[1])) {
+        if (image !== url && await this.downloadImage(image, file)) return true
+      }
+    }
+    return false
+  }
+
+  async downloadImage(url, file) {
     try {
-      const ac = new AbortController()
-      const t = setTimeout(() => ac.abort(), 15000)
-      const res = await fetch(url, { signal: ac.signal, headers: { 'User-Agent': 'GameLibrarian' } })
-      clearTimeout(t)
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'GameLibrarian' } })
       if (!res.ok) return false
       const type = res.headers.get('content-type') || ''
       if (type && !type.startsWith('image/')) return false

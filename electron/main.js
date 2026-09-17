@@ -22,7 +22,10 @@ const __dirname = path.dirname(__filename)
 let mainWindow = null
 let appIcon = null
 let appIconPath = null
-const detectionService = new GameDetectionService()
+const detectionService = new GameDetectionService(async (exe) => {
+  const icon = await app.getFileIcon(exe, { size: 'large' })
+  return icon.isEmpty() ? undefined : icon.toDataURL()
+})
 let playtimeService = null
 let settingsService = null
 let fastloadService = null
@@ -864,5 +867,4 @@ app.on('will-quit', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
-
 

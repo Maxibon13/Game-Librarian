@@ -520,3 +520,15 @@ html[data-scheme='light'] .details-info { background: rgba(0,0,0,.04); }
   .details-main { flex-direction: column; }
   .welcome-grid { grid-template-columns: 1fr; }
 }
+.scan-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 0 0 24px;
+  padding: 16px 20px;
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+}
+.scan-error p { margin: 4px 0 0; }

@@ -96,8 +96,8 @@ export function LibraryView(p: Props) {
       {!p.loading && allGames.length === 0 && (
         <EmptyState
           title="Your library is empty"
-          body="No launchers were detected. Check the install paths in Settings, then rescan."
-          action={{ label: 'Open settings', onClick: p.onGoSettings }}
+          body="Check your launcher locations, then save and rescan."
+          action={{ label: 'Update launcher locations', onClick: p.onGoSettings }}
         />
       )}
 
