@@ -171,21 +171,22 @@ function titleBarOverlayFor(settings) {
     height: 40
   }
 }
-// Resolve Version.Json depending on dev vs packaged
+// Resolve Version.Json depending on dev vs packaged.
+// Prefer writable copies the installer overwrites (resources/ and install root) over the asar copy.
 function getVersionJsonCandidatePaths() {
   const candidates = []
-  // __dirname is .../electron in both dev and packaged (inside asar)
-  candidates.push(path.join(__dirname, '../Version.Json'))
-  // Current working dir (useful in dev shells)
-  candidates.push(path.join(process.cwd(), 'Version.Json'))
-  // Packaged resources path (defensive; usually the __dirname path above works)
   try {
     const resBase = process.resourcesPath
     if (resBase) {
-      // If running unpacked asar, the asar virtual path still resolves via normal joins
-      candidates.push(path.join(resBase, 'app.asar', 'Version.Json'))
       candidates.push(path.join(resBase, 'Version.Json'))
+      if (app.isPackaged) candidates.push(path.join(path.dirname(resBase), 'Version.Json'))
     }
+  } catch {}
+  candidates.push(path.join(__dirname, '../Version.Json'))
+  candidates.push(path.join(process.cwd(), 'Version.Json'))
+  try {
+    const resBase = process.resourcesPath
+    if (resBase) candidates.push(path.join(resBase, 'app.asar', 'Version.Json'))
   } catch {}
   return candidates
 }
