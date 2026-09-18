@@ -1,4 +1,4 @@
-Game Librarian (1.0) 170926 - Pre
+Game Librarian (1.0) - Pre
 ==============
 
 <div align="center">
