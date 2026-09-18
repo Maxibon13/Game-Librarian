@@ -1,12 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-REM Updater for Game Librarian
-REM - Reads local Version.Json (string labels like "(1.0) 160926 - Pre")
-REM - Fetches the same file from GitHub main
-REM - Prints JSON status in "check" mode
-REM - Optionally launches installer\Installer.exe
-
 set "REPO_URL=https://github.com/Maxibon13/Game-Librarian"
 set "RAW_VERSION_URL=https://raw.githubusercontent.com/Maxibon13/Game-Librarian/main/Version.Json"
 
@@ -33,28 +27,33 @@ if /i "%~1"=="check" (
 for /f "usebackq delims=" %%U in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%VERSION_PS1%" -LocalJson "%LOCAL_VERSION_JSON%" -RemoteUrl "%RAW_VERSION_URL%" -RepoUrl "%REPO_URL%" -FlagOnly`) do set "UPDATE_AVAILABLE=%%U"
 if not defined UPDATE_AVAILABLE set "UPDATE_AVAILABLE=0"
 
+set "INSTALLER_DIR=%ROOT_DIR_NORM%\installer"
+set "TEMP_UPDATER=%TEMP%\GameLibrarian_update"
+
 if "%UPDATE_AVAILABLE%"=="1" (
   echo [INFO] Update available
   set "INSTALL_DIR=%DESIRED_ROOT%"
-  echo [INFO] Launching installer to update "%INSTALL_DIR%" ...
-  set "INSTALLER_DIR=%ROOT_DIR_NORM%\installer"
-  pushd "%INSTALLER_DIR%" >nul
+  echo [INFO] Launching installer to update "!INSTALL_DIR!" ...
+  for /f "usebackq delims=" %%V in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "try { ((Invoke-WebRequest -UseBasicParsing '%RAW_VERSION_URL%').Content | ConvertFrom-Json).version } catch { }"`) do set "GL_REMOTE_VERSION=%%V"
+  if defined GL_REMOTE_VERSION echo [INFO] Remote version: !GL_REMOTE_VERSION!
   if exist "%INSTALLER_DIR%\Installer.exe" (
-    echo [INFO] Launching Installer.exe
-    start "Installer" /b "%INSTALLER_DIR%\Installer.exe" --update
-    set "ERR=%ERRORLEVEL%"
+    if not exist "%TEMP_UPDATER%" mkdir "%TEMP_UPDATER%"
+    copy /Y "%INSTALLER_DIR%\Installer.exe" "%TEMP_UPDATER%\Installer.exe" >nul
+    set "GL_UPDATER_TEMP=1"
+    echo [INFO] Launching Installer.exe from temp
+    start "Installer" /b "%TEMP_UPDATER%\Installer.exe" --update
+    set "ERR=!ERRORLEVEL!"
   ) else if exist "%INSTALLER_DIR%\src\installer_gui.pyw" (
     echo [INFO] Launching Python installer GUI (installer_gui.pyw)
     start "Installer" cmd /c "py -3 \"%INSTALLER_DIR%\src\installer_gui.pyw\" --update"
-    set "ERR=%ERRORLEVEL%"
+    set "ERR=!ERRORLEVEL!"
   ) else (
     echo [ERROR] No installer found in "%INSTALLER_DIR%"
     set "ERR=1"
   )
-  popd >nul
-  if not "%ERR%"=="0" (
-    echo [ERROR] Installer failed with code %ERR%.
-    exit /b %ERR%
+  if not "!ERR!"=="0" (
+    echo [ERROR] Installer failed with code !ERR!.
+    exit /b !ERR!
   )
   echo [INFO] Installer started. It downloads the latest release and updates the app.
   exit /b 0

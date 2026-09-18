@@ -3,6 +3,7 @@ node_modules
 dist
 build
 release
+docs
 # Embedded Python runtime fetched by installer/build_release.ps1 (shipped as resources/python)
 runtime
 

@@ -14,6 +14,7 @@ import {
 } from './windows.js'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
+import os from 'node:os'
 import { spawn } from 'node:child_process'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -232,6 +233,18 @@ function parseOwnerRepo(repoUrl) {
 // Folder the installer should update: repo root in dev, folder containing Game Librarian.exe when packaged
 function installRootDir() {
   return app.isPackaged ? path.dirname(process.resourcesPath) : process.cwd()
+}
+
+function updaterTempDir() {
+  return path.join(os.tmpdir(), 'GameLibrarian_update')
+}
+
+function copyInstallerToTemp(srcExe) {
+  const dir = updaterTempDir()
+  fsSync.mkdirSync(dir, { recursive: true })
+  const dest = path.join(dir, 'Installer.exe')
+  fsSync.copyFileSync(srcExe, dest)
+  return dest
 }
 
 // Attempt to stop the Vite dev server to clean up the dev console (Windows only)
@@ -823,12 +836,19 @@ app.whenReady().then(async () => {
       const pyGui = path.join(installerDir, 'src', 'installer_gui.pyw')
       const env = { ...process.env, GL_LAUNCHED_FROM_APP: '1' }
       env.INSTALL_DIR = installRootDir()
+      try {
+        const { owner, repo } = parseOwnerRepo(APP_REPOSITORY)
+        const remote = await fetchRemoteVersion(owner, repo)
+        if (remote) env.GL_REMOTE_VERSION = remote
+      } catch {}
       // Launch via 'start' so the GUI is detached from the Electron process group and
       // survives the app quitting right after spawning.
       const launch = (cwd, ...args) => spawn('cmd.exe', ['/c', 'start', '""', ...args], { cwd, env, detached: true, windowsHide: false, stdio: 'ignore' })
       let child
       if (fsSync.existsSync(exeInstaller)) {
-        child = launch(installerDir, 'Installer.exe', '--update')
+        env.GL_UPDATER_TEMP = '1'
+        const tempExe = copyInstallerToTemp(exeInstaller)
+        child = launch(path.dirname(tempExe), 'Installer.exe', '--update')
       } else if (fsSync.existsSync(pyGui)) {
         child = launch(path.dirname(pyGui), 'py', '-3', path.basename(pyGui), '--update')
       } else {
